@@ -27,6 +27,50 @@ def _normalize_recipe(payload_recipe: object) -> list[str]:
     raise StaffPermissionError("recipe must be a string list.", 400)
 
 
+def _normalize_i18n_text(payload: object, field_name: str) -> dict[str, str]:
+    if payload is None:
+        return {"kk": "", "ru": "", "en": ""}
+    if not isinstance(payload, dict):
+        raise StaffPermissionError(f"{field_name} must be an object.", 400)
+    return {
+        "kk": str(payload.get("kk") or "").strip(),
+        "ru": str(payload.get("ru") or "").strip(),
+        "en": str(payload.get("en") or "").strip(),
+    }
+
+
+def _normalize_recipe_i18n(payload: object) -> dict[str, list[str]]:
+    if payload is None:
+        return {"kk": [], "ru": [], "en": []}
+    if not isinstance(payload, dict):
+        raise StaffPermissionError("recipeI18n must be an object.", 400)
+    result: dict[str, list[str]] = {}
+    for lang in ["kk", "ru", "en"]:
+        result[lang] = _normalize_recipe(payload.get(lang))
+    return result
+
+
+def _normalize_price_by_currency(payload: object, fallback_price_minor: int | None = None) -> dict[str, int]:
+    if payload is None:
+        if fallback_price_minor is None:
+            raise StaffPermissionError("priceByCurrency is required.", 400)
+        return {"KZT": int(fallback_price_minor)}
+    if not isinstance(payload, dict):
+        raise StaffPermissionError("priceByCurrency must be an object.", 400)
+    normalized: dict[str, int] = {}
+    for code, value in payload.items():
+        code_norm = str(code or "").upper().strip()
+        if len(code_norm) != 3:
+            raise StaffPermissionError("Currency code must be 3 letters.", 400)
+        amount = int(value)
+        if amount < 0:
+            raise StaffPermissionError("Currency amount must be >= 0.", 400)
+        normalized[code_norm] = amount
+    if "KZT" not in normalized:
+        raise StaffPermissionError("priceByCurrency must include KZT.", 400)
+    return normalized
+
+
 def _normalize_image(payload_image: object) -> str | None:
     if payload_image is None:
         return None
@@ -62,6 +106,7 @@ def list_menu_categories(actor: AdminPrincipal, restaurant_id: str | None) -> li
         {
             "id": c.id,
             "name": c.name,
+            "nameI18n": c.name_i18n or {"kk": "", "ru": c.name, "en": ""},
             "image": c.image,
             "sortOrder": c.sort_order,
             "isActive": c.is_active,
@@ -81,10 +126,15 @@ def create_menu_category(actor: AdminPrincipal, payload: dict) -> MenuCategory:
         .filter_by(restaurant_id=scope_id)
         .scalar()
     )
+    name_i18n = _normalize_i18n_text(payload.get("nameI18n"), "nameI18n")
+    if not name_i18n.get("ru"):
+        name_i18n["ru"] = name
+
     category = MenuCategory(
         id=(payload.get("id") or f"cat-{uuid.uuid4().hex[:8]}"),
         restaurant_id=scope_id,
         name=name,
+        name_i18n=name_i18n,
         image=_normalize_image(payload.get("image")),
         sort_order=int(max_order or 0) + 1,
         is_active=bool(payload.get("isActive", True)),
@@ -104,6 +154,11 @@ def update_menu_category(actor: AdminPrincipal, category_id: str, payload: dict)
         if not name:
             raise StaffPermissionError("name cannot be empty.", 400)
         category.name = name
+    if "nameI18n" in payload:
+        normalized_name_i18n = _normalize_i18n_text(payload.get("nameI18n"), "nameI18n")
+        if not normalized_name_i18n.get("ru"):
+            normalized_name_i18n["ru"] = category.name
+        category.name_i18n = normalized_name_i18n
     if "isActive" in payload:
         category.is_active = bool(payload.get("isActive"))
     if "image" in payload:
@@ -130,6 +185,7 @@ def reorder_menu_categories(actor: AdminPrincipal, payload: dict) -> list[dict]:
         {
             "id": c.id,
             "name": c.name,
+            "nameI18n": c.name_i18n or {"kk": "", "ru": c.name, "en": ""},
             "image": c.image,
             "sortOrder": c.sort_order,
             "isActive": c.is_active,
@@ -158,9 +214,13 @@ def list_menu_items(actor: AdminPrincipal, restaurant_id: str | None, category_i
             "id": item.id,
             "categoryId": item.category_id,
             "name": item.name,
+            "nameI18n": item.name_i18n or {"kk": "", "ru": item.name, "en": ""},
             "description": item.description,
+            "descriptionI18n": item.description_i18n or {"kk": "", "ru": item.description or "", "en": ""},
             "recipe": item.recipe,
+            "recipeI18n": item.recipe_i18n or {"kk": [], "ru": item.recipe or [], "en": []},
             "image": item.image,
+            "priceByCurrency": item.price_by_currency or {},
             "discountMinor": item.discount_minor,
             "discountIsActive": item.discount_is_active,
             "isActive": item.is_active,
@@ -196,14 +256,28 @@ def create_menu_item(actor: AdminPrincipal, payload: dict) -> MenuItem:
         raise StaffPermissionError("discountMinor must be >= 0.", 400)
 
     item_id = payload.get("id") or f"item-{uuid.uuid4().hex[:10]}"
+    name_i18n = _normalize_i18n_text(payload.get("nameI18n"), "nameI18n")
+    if not name_i18n.get("ru"):
+        name_i18n["ru"] = name
+    description_i18n = _normalize_i18n_text(payload.get("descriptionI18n"), "descriptionI18n")
+    if not description_i18n.get("ru"):
+        description_i18n["ru"] = str(payload.get("description") or "")
+    recipe_i18n = _normalize_recipe_i18n(payload.get("recipeI18n"))
+    if not recipe_i18n.get("ru"):
+        recipe_i18n["ru"] = _normalize_recipe(payload.get("recipe"))
+
     item = MenuItem(
         id=item_id,
         restaurant_id=scope_id,
         category_id=category_id,
         name=name,
+        name_i18n=name_i18n,
         description=payload.get("description"),
+        description_i18n=description_i18n,
         recipe=_normalize_recipe(payload.get("recipe")),
+        recipe_i18n=recipe_i18n,
         image=_normalize_image(payload.get("image")),
+        price_by_currency=_normalize_price_by_currency(payload.get("priceByCurrency"), payload.get("variants", [{}])[0].get("priceMinor")),
         discount_minor=discount_minor,
         discount_is_active=bool(payload.get("discountIsActive", False)),
         is_active=bool(payload.get("isActive", True)),
@@ -221,7 +295,7 @@ def create_menu_item(actor: AdminPrincipal, payload: dict) -> MenuItem:
             menu_item_id=item.id,
             name=variant_name,
             price_minor=int(price_minor),
-            currency=(variant_payload.get("currency") or "USD").upper(),
+            currency=(variant_payload.get("currency") or "KZT").upper(),
             is_active=bool(variant_payload.get("isActive", True)),
         )
         db.session.add(variant)
@@ -242,10 +316,25 @@ def update_menu_item(actor: AdminPrincipal, menu_item_id: str, payload: dict) ->
         if not name:
             raise StaffPermissionError("name cannot be empty.", 400)
         item.name = name
+    if "nameI18n" in payload:
+        normalized_name_i18n = _normalize_i18n_text(payload.get("nameI18n"), "nameI18n")
+        if not normalized_name_i18n.get("ru"):
+            normalized_name_i18n["ru"] = item.name
+        item.name_i18n = normalized_name_i18n
     if "description" in payload:
         item.description = payload.get("description")
+    if "descriptionI18n" in payload:
+        normalized_description_i18n = _normalize_i18n_text(payload.get("descriptionI18n"), "descriptionI18n")
+        if not normalized_description_i18n.get("ru"):
+            normalized_description_i18n["ru"] = item.description or ""
+        item.description_i18n = normalized_description_i18n
     if "recipe" in payload:
         item.recipe = _normalize_recipe(payload.get("recipe"))
+    if "recipeI18n" in payload:
+        normalized_recipe_i18n = _normalize_recipe_i18n(payload.get("recipeI18n"))
+        if not normalized_recipe_i18n.get("ru"):
+            normalized_recipe_i18n["ru"] = item.recipe or []
+        item.recipe_i18n = normalized_recipe_i18n
     if "image" in payload:
         item.image = _normalize_image(payload.get("image"))
     if "isAvailableNow" in payload:
@@ -262,6 +351,8 @@ def update_menu_item(actor: AdminPrincipal, menu_item_id: str, payload: dict) ->
         item.discount_minor = discount_minor
     if "discountIsActive" in payload:
         item.discount_is_active = bool(payload.get("discountIsActive"))
+    if "priceByCurrency" in payload:
+        item.price_by_currency = _normalize_price_by_currency(payload.get("priceByCurrency"))
     if "variants" in payload:
         variants_payload = payload.get("variants") or []
         if not variants_payload:
@@ -283,14 +374,14 @@ def update_menu_item(actor: AdminPrincipal, menu_item_id: str, payload: dict) ->
                 menu_item_id=item.id,
                 name=variant_name,
                 price_minor=int(variant_payload.get("priceMinor")),
-                currency=(variant_payload.get("currency") or "USD").upper(),
+                currency=(variant_payload.get("currency") or "KZT").upper(),
                 is_active=True,
             )
             db.session.add(variant)
         else:
             variant.name = variant_name
             variant.price_minor = int(variant_payload.get("priceMinor"))
-            variant.currency = (variant_payload.get("currency") or variant.currency or "USD").upper()
+            variant.currency = (variant_payload.get("currency") or variant.currency or "KZT").upper()
 
     return item
 

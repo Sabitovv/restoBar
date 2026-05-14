@@ -86,6 +86,122 @@
   margin-bottom: 0.8rem;
 }
 
+.restaurant-profile-note {
+  margin: 0 0 0.8rem;
+  color: var(--muted);
+}
+
+.restaurant-profile-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.profile-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.profile-card h3 {
+  margin: 0;
+}
+
+.profile-card-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.restaurant-profile-form input,
+.restaurant-profile-form select,
+.restaurant-profile-form textarea,
+.restaurant-profile-form button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+}
+
+.restaurant-profile-form button {
+  background: #201a10;
+  color: #fff;
+  cursor: pointer;
+}
+
+.hours-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.hours-day-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.55rem;
+  background: #fcfaf5;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.hours-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.hours-day-head label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.hours-time-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+}
+
+.hours-time-field {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.hours-time-field span {
+  line-height: 1.1;
+}
+
+.restaurant-profile-footer {
+  position: sticky;
+  bottom: -1rem;
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1px solid var(--line);
+  padding-top: 0.65rem;
+}
+
+.restaurant-profile-footer button {
+  width: 100%;
+  min-height: 44px;
+}
+
+.hours-row {
+  display: grid;
+  grid-template-columns: 70px auto 1fr 1fr;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.hours-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .sticky-filters {
   position: static;
   background: #fff;
@@ -337,6 +453,40 @@
   margin-top: 0;
 }
 
+.dish-wizard {
+  width: min(560px, calc(100% - 0.6rem));
+}
+
+.wizard-step-title {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.wizard-error {
+  margin: 0;
+  color: #9a2f1b;
+  font-size: 0.88rem;
+}
+
+.wizard-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.wizard-footer {
+  grid-column: 1 / -1;
+  position: sticky;
+  bottom: -1rem;
+  background: #fff;
+  border-top: 1px solid var(--line);
+  padding-top: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
 .close-btn {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -367,13 +517,30 @@
     grid-template-columns: 1fr;
   }
 
+  .profile-card-grid,
+  .hours-grid,
+  .hours-time-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hours-day-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .modal {
     width: calc(100% - 0.6rem);
     padding: 0.75rem;
+    max-height: calc(100vh - 0.6rem);
   }
 
   .modal .invite {
     grid-template-columns: 1fr;
+  }
+
+  .wizard-footer {
+    bottom: -0.75rem;
+    padding-bottom: 0.2rem;
   }
 
   .table-wrap {

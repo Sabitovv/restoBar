@@ -41,6 +41,7 @@ from .services.admin_restaurant_service import (
 )
 from .services.admin_staff_service import StaffPermissionError, change_staff_role, invite_staff_member, list_staff, revoke_staff_member
 from .services.menu_service import get_cafe_info_from_pg, get_categories_from_pg, get_category_menu_from_pg, get_menu_item_details_from_pg
+from .services.ai_service import AIService
 from .services.storage_service import generate_idempotency_key, mirror_order_to_json, persist_order
 
 def create_app() -> Flask:
@@ -123,8 +124,9 @@ def register_routes(app: Flask) -> None:
     @app.route("/info")
     def info():
         settings = app.config["SETTINGS"]
+        lang = (request.args.get("lang") or "ru").strip().lower()
         if settings.read_menu_from_pg:
-            info_payload = get_cafe_info_from_pg()
+            info_payload = get_cafe_info_from_pg(lang=lang)
             if info_payload is not None or not settings.json_menu_fallback:
                 if info_payload is None:
                     return {"message": "Could not find info data."}, 404
@@ -137,8 +139,9 @@ def register_routes(app: Flask) -> None:
     @app.route("/categories")
     def categories():
         settings = app.config["SETTINGS"]
+        lang = (request.args.get("lang") or "ru").strip().lower()
         if settings.read_menu_from_pg:
-            categories_data = get_categories_from_pg()
+            categories_data = get_categories_from_pg(lang=lang)
             if categories_data or not settings.json_menu_fallback:
                 return categories_data
         try:
@@ -149,8 +152,10 @@ def register_routes(app: Flask) -> None:
     @app.route("/menu/<category_id>")
     def category_menu(category_id: str):
         settings = app.config["SETTINGS"]
+        lang = (request.args.get("lang") or "ru").strip().lower()
+        currency = (request.args.get("currency") or "KZT").strip().upper()
         if settings.read_menu_from_pg:
-            menu_data = get_category_menu_from_pg(category_id)
+            menu_data = get_category_menu_from_pg(category_id, lang=lang, currency=currency)
             if menu_data or not settings.json_menu_fallback:
                 return menu_data
         try:
@@ -161,8 +166,10 @@ def register_routes(app: Flask) -> None:
     @app.route("/menu/details/<menu_item_id>")
     def menu_item_details(menu_item_id: str):
         settings = app.config["SETTINGS"]
+        lang = (request.args.get("lang") or "ru").strip().lower()
+        currency = (request.args.get("currency") or "KZT").strip().upper()
         if settings.read_menu_from_pg:
-            menu_item = get_menu_item_details_from_pg(menu_item_id)
+            menu_item = get_menu_item_details_from_pg(menu_item_id, lang=lang, currency=currency)
             if menu_item is not None or not settings.json_menu_fallback:
                 if menu_item is None:
                     return {"message": f"Could not menu item data with `{menu_item_id}` ID."}, 404
@@ -568,6 +575,31 @@ def register_routes(app: Flask) -> None:
             db.session.rollback()
             return {"message": exc.message}, exc.status_code
         return {"id": item.id, "isAvailableNow": item.is_available_now}
+
+    @app.route("/admin/i18n/translate", methods=["POST"])
+    def admin_i18n_translate():
+        principal = get_admin_principal()
+        if principal is None:
+            return {"message": "Unauthorized."}, 401
+        payload = request.get_json() or {}
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return {"message": "text is required."}, 400
+        source_lang = str(payload.get("sourceLang") or "ru").strip().lower()
+        targets = payload.get("targets") or ["kk", "ru", "en"]
+        if not isinstance(targets, list):
+            return {"message": "targets must be a list."}, 400
+
+        settings = app.config["SETTINGS"]
+        ai_service = AIService(
+            model=settings.ai_model,
+            timeout_seconds=settings.ai_request_timeout_seconds,
+            max_retries=settings.ai_max_retries,
+        )
+        result = ai_service.translate_text(text=text, source_lang=source_lang, targets=[str(code) for code in targets])
+        if not result.get("ok"):
+            return {"message": result.get("error") or "Translation failed."}, 502
+        return {"translations": result.get("translations", {})}
 
     @app.route("/")
     def frontend_index():

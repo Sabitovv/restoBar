@@ -1,9 +1,13 @@
 <section>
     <div id="cart-items" class="cart-items-container"></div>
+    <div id="cart-summary" class="cart-summary" style="display:none;">
+        <div id="cart-summary-meta" class="cart-summary-meta"></div>
+        <button id="cart-summary-checkout" class="cart-summary-checkout">Оформить</button>
+    </div>
     <div id="cart-empty-placeholder" class="cart-empty-placeholder">
         <div id="cart-empty-placeholder-icon"></div>
-        <h3>Your cart is empty</h3>
-        <p>It's time to order something delicious!</p>
+        <h3>Корзина пуста</h3>
+        <p>Добавьте блюда, чтобы оформить заказ.</p>
     </div>
 
     <template id="cart-item-template">

@@ -4,6 +4,7 @@ import { Route } from "../routing/route.js";
 import { showSnackbar } from "../routing/router.js";
 import { TelegramSDK } from "../telegram/telegram.js";
 import { loadImage } from "../utils/dom.js";
+import { toDisplayCost } from "../utils/currency.js";
 
 /**
  * Page for displaying cart items, as well as changing them (quantity).
@@ -40,6 +41,7 @@ export class CartPage extends Route {
 
     #fillCartItems(cartItems) {
         this.#updateMainButton(cartItems);
+        this.#updateInlineSummary(cartItems);
         this.#changeEmptyPlaceholderVisibility(cartItems.length == 0);
 
         const cartItemsContainer = $('#cart-items');
@@ -82,6 +84,26 @@ export class CartPage extends Route {
         });
     }
 
+    #updateInlineSummary(cartItems) {
+        const summary = $('#cart-summary');
+        if (!summary || summary.length === 0) {
+            return;
+        }
+        if (cartItems.length === 0) {
+            summary.hide();
+            return;
+        }
+        const totalCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+        const totalCost = cartItems.reduce((sum, item) => sum + item.variant.cost * item.quantity, 0);
+        const currency = cartItems[0]?.variant?.currency || 'KZT';
+        $('#cart-summary-meta').text(`${totalCount} items · ${toDisplayCost(totalCost, currency)}`);
+        $('#cart-summary-checkout').off('click').on('click', () => {
+            TelegramSDK.setMainButtonLoading(true);
+            this.#createOrder(cartItems);
+        });
+        summary.show();
+    }
+
     #updateTextWithBoop(element, text) {
         if (element.text() != text) {
             element
@@ -92,7 +114,7 @@ export class CartPage extends Route {
 
     #updateMainButton(cartItems) {
         if (cartItems.length > 0) {
-            TelegramSDK.showMainButton('CHECKOUT', () => {
+            TelegramSDK.showMainButton('ОФОРМИТЬ ЗАКАЗ', () => {
                 TelegramSDK.setMainButtonLoading(true);
                 this.#createOrder(cartItems);
             });
@@ -125,7 +147,7 @@ export class CartPage extends Route {
                     this.#handleInvoiceStatus(status);
                 });
             } else {
-                showSnackbar(result.error, 'error');
+                showSnackbar(result.error || 'Ошибка создания заказа.', 'error');
             }
         });
     }
@@ -136,10 +158,10 @@ export class CartPage extends Route {
             TelegramSDK.close();
         } else if (status == 'failed') {
             TelegramSDK.setMainButtonLoading(false);
-            showSnackbar('Something went wrong, payment is unsuccessful :(', 'error');
+            showSnackbar('Оплата не прошла. Попробуйте снова.', 'error');
         } else {
             TelegramSDK.setMainButtonLoading(false);
-            showSnackbar('The order was cancelled.', 'warning');
+            showSnackbar('Заказ отменен.', 'warning');
         }
     }
 

@@ -2,7 +2,7 @@ import { Route } from "../routing/route.js";
 import { navigateTo } from "../routing/router.js";
 import { get } from "../requests/requests.js";
 import { TelegramSDK } from "../telegram/telegram.js";
-import { replaceShimmerContent } from "../utils/dom.js";
+import { loadImage, replaceShimmerContent } from "../utils/dom.js";
 import { Cart } from "../cart/cart.js";
 
 /**
@@ -41,6 +41,13 @@ export class CategoryPage extends Route {
     }
 
     #fillMenu(cafeItems) {
+        const emptyPlaceholder = $('#category-empty-placeholder');
+        if (Array.isArray(cafeItems) && cafeItems.length === 0) {
+            emptyPlaceholder.show();
+        } else {
+            emptyPlaceholder.hide();
+        }
+
         replaceShimmerContent(
             '#cafe-category',
             '#cafe-item-template',
@@ -48,7 +55,7 @@ export class CategoryPage extends Route {
             cafeItems,
             (template, cafeItem) => {
                 template.attr('id', cafeItem.name);
-                template.find('#cafe-item-image').attr('src', cafeItem.image);
+                loadImage(template.find('#cafe-item-image'), cafeItem.image || 'icons/icon-transparent.svg');
                 template.find('#cafe-item-name').text(cafeItem.name);
                 template.find('#cafe-item-description').text(cafeItem.description);
                 template.on('click', () => {

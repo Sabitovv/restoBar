@@ -2,6 +2,35 @@
 // Don't forget to add it to allowed origins on backend.
 const baseUrl = '';
 
+function getPreferredLang() {
+    const saved = String(localStorage.getItem('preferredLang') || '').toLowerCase();
+    if (saved === 'kk' || saved === 'ru' || saved === 'en') {
+        return saved;
+    }
+    const tgLang = window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code;
+    if (tgLang === 'kk' || tgLang === 'ru' || tgLang === 'en') {
+        return tgLang;
+    }
+    const short = String(tgLang || '').slice(0, 2).toLowerCase();
+    if (short === 'kk' || short === 'ru' || short === 'en') {
+        return short;
+    }
+    return 'ru';
+}
+
+function getPreferredCurrency() {
+    const saved = localStorage.getItem('preferredCurrency');
+    if (saved && /^[A-Z]{3}$/.test(saved)) {
+        return saved;
+    }
+    return 'KZT';
+}
+
+function withContext(endpoint) {
+    const sep = endpoint.includes('?') ? '&' : '?';
+    return `${endpoint}${sep}lang=${encodeURIComponent(getPreferredLang())}&currency=${encodeURIComponent(getPreferredCurrency())}`;
+}
+
 /**
  * Performs GET request.
  * @param {string} endpoint API endpoint path, e.g. '/info'.
@@ -9,7 +38,7 @@ const baseUrl = '';
  */
 export function get(endpoint, onSuccess) {
     $.ajax({
-        url: baseUrl + endpoint,
+        url: baseUrl + withContext(endpoint),
         dataType: "json",
         success: result => onSuccess(result)
     });

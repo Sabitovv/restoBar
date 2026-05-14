@@ -39,7 +39,7 @@ class CartItem {
      */
     getDisplayTotalCost() {
         const totalCost = this.variant.cost * this.quantity;
-        return toDisplayCost(totalCost);
+        return toDisplayCost(totalCost, this.variant.currency || 'KZT');
     }
 }
 

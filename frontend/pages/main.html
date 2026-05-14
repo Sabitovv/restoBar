@@ -8,6 +8,24 @@
         <p id="cafe-kitchen-categories" class="cafe-kitchen-categories shimmer"></p>
         <div class="cafe-parameters-container shimmer"></div>
     </div>
+    <div class="cafe-controls-container">
+        <div class="cafe-control-field">
+            <label>Язык</label>
+            <div id="language-selector" class="segmented-control" role="tablist" aria-label="Язык интерфейса">
+                <button type="button" data-lang="ru">RU</button>
+                <button type="button" data-lang="kk">KK</button>
+                <button type="button" data-lang="en">EN</button>
+            </div>
+        </div>
+        <div class="cafe-control-field">
+            <label>Валюта</label>
+            <div id="currency-selector" class="segmented-control" role="tablist" aria-label="Валюта меню">
+                <button type="button" data-currency="KZT">KZT</button>
+                <button type="button" data-currency="RUB">RUB</button>
+                <button type="button" data-currency="USD">USD</button>
+            </div>
+        </div>
+    </div>
     <div class="cafe-section-container">
         <h3 id="cafe-section-categories-title" class="cafe-section-title shimmer">Categories</h3>
         <div id="cafe-categories" class="cafe-section-horizontal">
@@ -62,6 +80,10 @@
                 </div>
                 <div id="cafe-status" class="cafe-status"></div>
             </div>
+            <div class="cafe-working-hours-container">
+                <div id="cafe-working-hours-now" class="cafe-working-hours-now"></div>
+                <div id="cafe-working-hours-list" class="cafe-working-hours-list"></div>
+            </div>
         </div>  
     </template>
 
@@ -79,4 +101,6 @@
             <p id="cafe-item-description" class="small cafe-item-description"></p>
         </div>
     </template>
+
+    <button id="mobile-cart-cta" class="mobile-cart-cta" style="display:none;"></button>
 </section>

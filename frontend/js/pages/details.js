@@ -14,6 +14,7 @@ export class DetailsPage extends Route {
 
     #selectedVariant;
     #selectedQuantity = 1;
+    #menuItem = null;
 
     constructor() {
         super('details', '/pages/details.html')
@@ -37,6 +38,7 @@ export class DetailsPage extends Route {
     }
 
     #fillDetails(menuItem) {
+        this.#menuItem = menuItem;
         loadImage($('#cafe-item-details-image'), menuItem.image);
 
         $('#cafe-item-details-name')
@@ -67,9 +69,14 @@ export class DetailsPage extends Route {
         this.#resetQuantity();
         $('#cafe-item-details-quantity-decrease-button').clickWithRipple(() => this.#decreaseQuantity());
         $('#cafe-item-details-quantity-increase-button').clickWithRipple(() => this.#increaseQuantity());
+        $('#cafe-item-details-add-button').off('click').on('click', () => {
+            Cart.addItem(menuItem, this.#selectedVariant, this.#selectedQuantity);
+            this.#showSuccessSnackbar();
+            TelegramSDK.notificationOccured('success');
+        });
 
         TelegramSDK.showMainButton(
-            'ADD TO CART',
+            'В КОРЗИНУ',
             () => {
                 Cart.addItem(menuItem, this.#selectedVariant, this.#selectedQuantity);
                 this.#showSuccessSnackbar();
@@ -96,9 +103,11 @@ export class DetailsPage extends Route {
     }
 
     #refreshSelectedVariantPrice() {
+        const selectedCost = toDisplayCost(this.#selectedVariant.cost, this.#selectedVariant.currency || 'KZT');
         $('#cafe-item-details-selected-variant-price')
             .removeClass('shimmer')
-            .text(toDisplayCost(this.#selectedVariant.cost));
+            .text(selectedCost);
+        this.#refreshInlineAddButton();
     }
 
     #increaseQuantity() {
@@ -124,12 +133,19 @@ export class DetailsPage extends Route {
         $('#cafe-item-details-quantity-value')
             .text(this.#selectedQuantity)
             .boop();
+        this.#refreshInlineAddButton();
+    }
+
+    #refreshInlineAddButton() {
+        if (!this.#selectedVariant) return;
+        const total = this.#selectedVariant.cost * this.#selectedQuantity;
+        $('#cafe-item-details-add-button').text(`Add · ${toDisplayCost(total, this.#selectedVariant.currency || 'KZT')}`);
     }
 
     #showSuccessSnackbar() {
         Snackbar.showSnackbar(
             'cafe-item-details-container',
-            'Successfully added to cart!',
+            'Блюдо добавлено в корзину.',
             {
                 bottom: '80px',
                 'background-color': 'var(--success-color)'

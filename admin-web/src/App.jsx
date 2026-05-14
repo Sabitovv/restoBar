@@ -4,6 +4,18 @@ import './App.css'
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'
 const MAX_IMAGE_FILE_BYTES = 3 * 1024 * 1024
 const MAX_IMAGE_EDGE = 1600
+const WEEK_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+const DAY_LABELS = { mon: 'Понедельник', tue: 'Вторник', wed: 'Среда', thu: 'Четверг', fri: 'Пятница', sat: 'Суббота', sun: 'Воскресенье' }
+
+const createDefaultWorkingHours = () => ({
+  mon: { isOpen: true, openAt: '09:00', closeAt: '22:00' },
+  tue: { isOpen: true, openAt: '09:00', closeAt: '22:00' },
+  wed: { isOpen: true, openAt: '09:00', closeAt: '22:00' },
+  thu: { isOpen: true, openAt: '09:00', closeAt: '22:00' },
+  fri: { isOpen: true, openAt: '09:00', closeAt: '22:00' },
+  sat: { isOpen: true, openAt: '09:00', closeAt: '22:00' },
+  sun: { isOpen: true, openAt: '09:00', closeAt: '22:00' },
+})
 
 function App() {
   const [principal, setPrincipal] = useState(() => {
@@ -11,7 +23,7 @@ function App() {
     return saved ? JSON.parse(saved) : null
   })
   const [status, setStatus] = useState('idle')
-  const [message, setMessage] = useState('Open this panel from Telegram bot with Open Admin button.')
+  const [message, setMessage] = useState('Откройте панель из Telegram-бота кнопкой Open Admin.')
   const [tab, setTab] = useState('restaurants')
   const [loading, setLoading] = useState(false)
 
@@ -22,10 +34,9 @@ function App() {
   const [restaurantProfile, setRestaurantProfile] = useState({
     name: '',
     about: '',
+    aboutI18n: { kk: '', ru: '', en: '' },
     previewImage: '',
-    workingHours: {
-      mon: '', tue: '', wed: '', thu: '', fri: '', sat: '', sun: '',
-    },
+    workingHours: createDefaultWorkingHours(),
   })
 
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('')
@@ -36,14 +47,22 @@ function App() {
 
   const [restaurantForm, setRestaurantForm] = useState({ name: '', slug: '' })
   const [inviteForm, setInviteForm] = useState({ username: '', role: 'admin', restaurantId: '' })
-  const [categoryForm, setCategoryForm] = useState({ name: '', image: '', isActive: true })
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    nameI18n: { kk: '', ru: '', en: '' },
+    image: '',
+    isActive: true,
+  })
   const [itemForm, setItemForm] = useState({
     name: '',
+    nameI18n: { kk: '', ru: '', en: '' },
     categoryId: '',
     oldPriceMinor: '',
     newPriceMinor: '500',
     description: '',
+    descriptionI18n: { kk: '', ru: '', en: '' },
     recipeText: '',
+    recipeI18n: { kk: '', ru: '', en: '' },
     image: '',
     isAvailableNow: true,
   })
@@ -52,19 +71,30 @@ function App() {
   const [draggingCategoryId, setDraggingCategoryId] = useState('')
   const [creatingCategory, setCreatingCategory] = useState(false)
   const [creatingDish, setCreatingDish] = useState(false)
+  const [createDishStep, setCreateDishStep] = useState(1)
+  const [editDishStep, setEditDishStep] = useState(1)
   const [editItemForm, setEditItemForm] = useState({
     id: '',
     name: '',
+    nameI18n: { kk: '', ru: '', en: '' },
     categoryId: '',
     oldPriceMinor: '',
     newPriceMinor: '0',
     description: '',
+    descriptionI18n: { kk: '', ru: '', en: '' },
     recipeText: '',
+    recipeI18n: { kk: '', ru: '', en: '' },
     image: '',
     isAvailableNow: true,
   })
   const [deleteCandidate, setDeleteCandidate] = useState(null)
-  const [editCategoryForm, setEditCategoryForm] = useState({ id: '', name: '', image: '', isActive: true })
+  const [editCategoryForm, setEditCategoryForm] = useState({
+    id: '',
+    name: '',
+    nameI18n: { kk: '', ru: '', en: '' },
+    image: '',
+    isActive: true,
+  })
 
   const isSuper = principal?.role === 'super_admin'
   const isAdmin = principal?.role === 'admin'
@@ -112,21 +142,71 @@ function App() {
   const splitPrices = (oldValue, newValue) => {
     const hasOld = String(oldValue || '').trim() !== ''
     const hasNew = String(newValue || '').trim() !== ''
-    if (!hasOld && !hasNew) throw new Error('Add old price, new price, or both.')
+    if (!hasOld && !hasNew) throw new Error('Укажите старую цену, новую цену или обе.')
 
     const oldPrice = hasOld ? Number(oldValue) : null
     const newPrice = hasNew ? Number(newValue) : null
-    if (oldPrice !== null && !(oldPrice > 0)) throw new Error('Old price must be > 0.')
-    if (newPrice !== null && !(newPrice > 0)) throw new Error('New price must be > 0.')
+    if (oldPrice !== null && !(oldPrice > 0)) throw new Error('Старая цена должна быть больше 0.')
+    if (newPrice !== null && !(newPrice > 0)) throw new Error('Новая цена должна быть больше 0.')
 
     if (oldPrice !== null && newPrice !== null) {
-      if (newPrice > oldPrice) throw new Error('New price cannot be greater than old price.')
+      if (newPrice > oldPrice) throw new Error('Новая цена не может быть больше старой.')
       if (newPrice === oldPrice) return { priceMinor: oldPrice, discountMinor: 0, discountIsActive: false }
       return { priceMinor: oldPrice, discountMinor: oldPrice - newPrice, discountIsActive: true }
     }
 
     const priceMinor = oldPrice ?? newPrice
     return { priceMinor, discountMinor: 0, discountIsActive: false }
+  }
+
+  const validateRuBaseText = (i18n, fieldLabel) => {
+    const ru = String(i18n?.ru || '').trim()
+    const kk = String(i18n?.kk || '').trim()
+    const en = String(i18n?.en || '').trim()
+    if ((kk || en) && !ru) {
+      throw new Error(`${fieldLabel}: сначала заполните RU, потом KK/EN.`)
+    }
+  }
+
+  const getStepOneError = (form) => {
+    const nameRu = String(form.nameI18n?.ru || form.name || '').trim()
+    const hasOld = String(form.oldPriceMinor || '').trim() !== ''
+    const hasNew = String(form.newPriceMinor || '').trim() !== ''
+    if (!nameRu) return 'Fill Dish name (RU).'
+    if (!form.categoryId) return 'Choose category.'
+    if (!hasOld && !hasNew) return 'Fill price KZT.'
+    const oldPrice = hasOld ? Number(form.oldPriceMinor) : null
+    const newPrice = hasNew ? Number(form.newPriceMinor) : null
+    if (oldPrice !== null && !(oldPrice > 0)) return 'Old price must be > 0.'
+    if (newPrice !== null && !(newPrice > 0)) return 'New price must be > 0.'
+    if (oldPrice !== null && newPrice !== null && newPrice > oldPrice) return 'New price cannot be greater than old price.'
+    return ''
+  }
+
+  const canContinueFromStepOne = (form) => !getStepOneError(form)
+
+  const roleLabel = (role) => {
+    if (role === 'super_admin') return 'супер-админ'
+    if (role === 'admin') return 'админ'
+    if (role === 'manager') return 'менеджер'
+    return role || '-'
+  }
+
+  const staffStatusLabel = (status) => {
+    if (status === 'active') return 'активен'
+    if (status === 'pending') return 'ожидает'
+    if (status === 'revoked') return 'отозван'
+    if (status === 'inactive') return 'неактивен'
+    return status || '-'
+  }
+
+  const ruTextInputProps = {
+    lang: 'ru',
+    inputMode: 'text',
+    autoCapitalize: 'off',
+    autoCorrect: 'off',
+    autoComplete: 'off',
+    spellCheck: false,
   }
 
   const api = async (path, options = {}) => {
@@ -140,7 +220,7 @@ function App() {
     })
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) {
-      throw new Error(payload.message || 'Request failed')
+      throw new Error(payload.message || 'Ошибка запроса')
     }
     return payload
   }
@@ -153,14 +233,14 @@ function App() {
   const fileToDataUrl = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result || ''))
-    reader.onerror = () => reject(new Error('Could not read selected file.'))
+    reader.onerror = () => reject(new Error('Не удалось прочитать выбранный файл.'))
     reader.readAsDataURL(file)
   })
 
   const loadImageFromDataUrl = (dataUrl) => new Promise((resolve, reject) => {
     const image = new Image()
     image.onload = () => resolve(image)
-    image.onerror = () => reject(new Error('Could not load image.'))
+    image.onerror = () => reject(new Error('Не удалось загрузить изображение.'))
     image.src = dataUrl
   })
 
@@ -173,7 +253,7 @@ function App() {
     canvas.width = targetWidth
     canvas.height = targetHeight
     const context = canvas.getContext('2d')
-    if (!context) throw new Error('Could not prepare image compressor.')
+    if (!context) throw new Error('Не удалось подготовить сжатие изображения.')
     context.drawImage(image, 0, 0, targetWidth, targetHeight)
 
     let quality = 0.86
@@ -183,7 +263,7 @@ function App() {
       output = canvas.toDataURL('image/jpeg', quality)
     }
     if (output.length > 4_500_000) {
-      throw new Error('Image is still too large after compression. Choose a smaller image.')
+      throw new Error('Изображение все еще слишком большое после сжатия. Выберите файл меньше.')
     }
     return output
   }
@@ -194,7 +274,7 @@ function App() {
     const initData = webApp?.initData
     if (!initData) {
       setStatus('error')
-      setMessage('Open this panel from Telegram bot with Open Admin button.')
+      setMessage('Откройте панель из Telegram-бота кнопкой Open Admin.')
       return
     }
 
@@ -207,11 +287,11 @@ function App() {
           body: JSON.stringify({ initData }),
         })
         const payload = await response.json()
-        if (!response.ok) throw new Error(payload.message || 'Authorization failed')
+        if (!response.ok) throw new Error(payload.message || 'Ошибка авторизации')
         localStorage.setItem('adminAccessToken', payload.accessToken)
         localStorage.setItem('adminPrincipal', JSON.stringify(payload.principal))
         setPrincipal(payload.principal)
-        toast('success', 'Access granted.')
+        toast('success', 'Доступ подтвержден.')
       } catch (error) {
         toast('error', error.message)
       } finally {
@@ -266,19 +346,27 @@ function App() {
   const loadRestaurantProfile = async () => {
     if (!principal || isSuper) return
     const data = await api('/admin/restaurant/profile')
+    const nextWorkingHours = createDefaultWorkingHours()
+    WEEK_DAYS.forEach((day) => {
+      const value = data.workingHours?.[day]
+      if (value && typeof value === 'object') {
+        nextWorkingHours[day] = {
+          isOpen: Boolean(value.isOpen),
+          openAt: value.openAt || '09:00',
+          closeAt: value.closeAt || '22:00',
+        }
+      }
+    })
     setRestaurantProfile({
       name: data.name || '',
       about: data.about || '',
-      previewImage: data.previewImage || '',
-      workingHours: {
-        mon: data.workingHours?.mon || '',
-        tue: data.workingHours?.tue || '',
-        wed: data.workingHours?.wed || '',
-        thu: data.workingHours?.thu || '',
-        fri: data.workingHours?.fri || '',
-        sat: data.workingHours?.sat || '',
-        sun: data.workingHours?.sun || '',
+      aboutI18n: {
+        kk: data.aboutI18n?.kk || '',
+        ru: data.aboutI18n?.ru || data.about || '',
+        en: data.aboutI18n?.en || '',
       },
+      previewImage: data.previewImage || '',
+      workingHours: nextWorkingHours,
     })
   }
 
@@ -316,7 +404,7 @@ function App() {
     try {
       await api('/admin/restaurants', { method: 'POST', body: JSON.stringify(restaurantForm) })
       setRestaurantForm({ name: '', slug: '' })
-      toast('success', 'Restaurant created.')
+      toast('success', 'Ресторан создан.')
       const data = await api('/admin/restaurants')
       setRestaurants(data.items || [])
     } catch (error) {
@@ -327,11 +415,11 @@ function App() {
   }
 
   const onDeleteRestaurant = async (id) => {
-    if (!window.confirm('Delete restaurant? It will become inactive.')) return
+    if (!window.confirm('Удалить ресторан? Он станет неактивным.')) return
     setLoading(true)
     try {
       await api(`/admin/restaurants/${id}`, { method: 'DELETE' })
-      toast('success', 'Restaurant set inactive.')
+      toast('success', 'Ресторан переведен в неактивный.')
       const data = await api('/admin/restaurants')
       setRestaurants(data.items || [])
     } catch (error) {
@@ -352,7 +440,7 @@ function App() {
       if (isSuper) payload.restaurantId = inviteForm.restaurantId
       await api('/admin/staff/invite', { method: 'POST', body: JSON.stringify(payload) })
       setInviteForm((state) => ({ ...state, username: '' }))
-      toast('success', 'Invitation created.')
+      toast('success', 'Приглашение создано.')
       await loadStaff()
     } catch (error) {
       toast('error', error.message)
@@ -362,11 +450,11 @@ function App() {
   }
 
   const onRevokeStaff = async (id) => {
-    if (!window.confirm('Revoke access?')) return
+    if (!window.confirm('Отозвать доступ?')) return
     setLoading(true)
     try {
       await api(`/admin/staff/${id}`, { method: 'DELETE' })
-      toast('success', 'Access revoked.')
+      toast('success', 'Доступ отозван.')
       await loadStaff()
     } catch (error) {
       toast('error', error.message)
@@ -379,9 +467,22 @@ function App() {
     event.preventDefault()
     setLoading(true)
     try {
-      await api('/admin/menu/categories', { method: 'POST', body: JSON.stringify(categoryForm) })
-      setCategoryForm({ name: '', image: '', isActive: true })
-      toast('success', 'Category created.')
+      const ruName = String(categoryForm.nameI18n.ru || '').trim()
+      if (!ruName) throw new Error('Название категории (RU) обязательно.')
+      await api('/admin/menu/categories', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...categoryForm,
+          name: ruName,
+          nameI18n: {
+            kk: categoryForm.nameI18n.kk,
+            ru: ruName,
+            en: categoryForm.nameI18n.en,
+          },
+        }),
+      })
+      setCategoryForm({ name: '', nameI18n: { kk: '', ru: '', en: '' }, image: '', isActive: true })
+      toast('success', 'Категория создана.')
       setCreatingCategory(false)
       await loadCategories()
     } catch (error) {
@@ -396,6 +497,11 @@ function App() {
     setEditCategoryForm({
       id: category.id,
       name: category.name || '',
+      nameI18n: {
+        kk: category.nameI18n?.kk || '',
+        ru: category.nameI18n?.ru || category.name || '',
+        en: category.nameI18n?.en || '',
+      },
       image: category.image || '',
       isActive: Boolean(category.isActive),
     })
@@ -409,12 +515,22 @@ function App() {
     event.preventDefault()
     setLoading(true)
     try {
-      if (!editCategoryForm.name.trim()) throw new Error('Category name is required.')
+      const ruName = String(editCategoryForm.nameI18n.ru || '').trim()
+      if (!ruName) throw new Error('Название категории (RU) обязательно.')
       await api(`/admin/menu/categories/${editCategoryForm.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name: editCategoryForm.name, image: editCategoryForm.image, isActive: editCategoryForm.isActive }),
+        body: JSON.stringify({
+          name: ruName,
+          nameI18n: {
+            kk: editCategoryForm.nameI18n.kk,
+            ru: ruName,
+            en: editCategoryForm.nameI18n.en,
+          },
+          image: editCategoryForm.image,
+          isActive: editCategoryForm.isActive,
+        }),
       })
-      toast('success', 'Category updated.')
+      toast('success', 'Категория обновлена.')
       closeEditCategory()
       await loadCategories()
       await loadMenuItems()
@@ -429,7 +545,7 @@ function App() {
     const file = event.target.files?.[0]
     if (!file) return
     if (file.size > MAX_IMAGE_FILE_BYTES) {
-      toast('error', 'Image is too large. Max size is 3 MB.')
+      toast('error', 'Изображение слишком большое. Максимум 3 МБ.')
       event.target.value = ''
       return
     }
@@ -437,7 +553,7 @@ function App() {
       const dataUrl = await fileToDataUrl(file)
       const compressed = await compressImageDataUrl(dataUrl)
       setCategoryForm((state) => ({ ...state, image: compressed }))
-      toast('success', 'Category image selected and compressed.')
+      toast('success', 'Изображение категории выбрано и сжато.')
     } catch (error) {
       toast('error', error.message)
     }
@@ -447,7 +563,7 @@ function App() {
     const file = event.target.files?.[0]
     if (!file) return
     if (file.size > MAX_IMAGE_FILE_BYTES) {
-      toast('error', 'Image is too large. Max size is 3 MB.')
+      toast('error', 'Изображение слишком большое. Максимум 3 МБ.')
       event.target.value = ''
       return
     }
@@ -455,7 +571,7 @@ function App() {
       const dataUrl = await fileToDataUrl(file)
       const compressed = await compressImageDataUrl(dataUrl)
       setEditCategoryForm((state) => ({ ...state, image: compressed }))
-      toast('success', 'Category image selected and compressed.')
+      toast('success', 'Изображение категории выбрано и сжато.')
     } catch (error) {
       toast('error', error.message)
     }
@@ -478,7 +594,7 @@ function App() {
         method: 'PATCH',
         body: JSON.stringify({ ids: next.map((item) => item.id) }),
       })
-      toast('success', 'Categories order saved.')
+      toast('success', 'Порядок категорий сохранен.')
     } catch (error) {
       toast('error', error.message)
       await loadCategories()
@@ -492,26 +608,47 @@ function App() {
     setLoading(true)
     try {
       const priceData = splitPrices(itemForm.oldPriceMinor, itemForm.newPriceMinor)
-      if (!itemForm.name.trim()) throw new Error('Dish name is required.')
-      if (!itemForm.categoryId) throw new Error('Category is required.')
+      const ruName = String(itemForm.nameI18n.ru || '').trim()
+      if (!ruName) throw new Error('Название блюда (RU) обязательно.')
+      if (!itemForm.categoryId) throw new Error('Категория обязательна.')
+      validateRuBaseText(itemForm.nameI18n, 'Название блюда')
+      validateRuBaseText(itemForm.descriptionI18n, 'Описание блюда')
+      validateRuBaseText(itemForm.recipeI18n, 'Рецепт блюда')
 
       await api('/admin/menu/items', {
         method: 'POST',
         body: JSON.stringify({
-          name: itemForm.name,
+          name: ruName,
+          nameI18n: {
+            kk: itemForm.nameI18n.kk,
+            ru: ruName,
+            en: itemForm.nameI18n.en,
+          },
           categoryId: itemForm.categoryId,
           description: itemForm.description,
+          descriptionI18n: {
+            kk: itemForm.descriptionI18n.kk,
+            ru: itemForm.descriptionI18n.ru || itemForm.description,
+            en: itemForm.descriptionI18n.en,
+          },
           recipe: parseRecipe(itemForm.recipeText),
+          recipeI18n: {
+            kk: parseRecipe(itemForm.recipeI18n.kk),
+            ru: parseRecipe(itemForm.recipeI18n.ru || itemForm.recipeText),
+            en: parseRecipe(itemForm.recipeI18n.en),
+          },
           image: itemForm.image,
+          priceByCurrency: { KZT: priceData.priceMinor },
           discountMinor: priceData.discountMinor,
           discountIsActive: priceData.discountIsActive,
           isAvailableNow: itemForm.isAvailableNow,
-          variants: [{ name: 'default', priceMinor: priceData.priceMinor, currency: 'USD' }],
+          variants: [{ name: 'default', priceMinor: priceData.priceMinor, currency: 'KZT' }],
         }),
       })
-      setItemForm((state) => ({ ...state, name: '', description: '', recipeText: '', image: '', oldPriceMinor: '', newPriceMinor: '500' }))
-      toast('success', 'Dish created.')
+      setItemForm((state) => ({ ...state, name: '', nameI18n: { kk: '', ru: '', en: '' }, description: '', descriptionI18n: { kk: '', ru: '', en: '' }, recipeText: '', recipeI18n: { kk: '', ru: '', en: '' }, image: '', oldPriceMinor: '', newPriceMinor: '500' }))
+      toast('success', 'Блюдо создано.')
       setCreatingDish(false)
+      setCreateDishStep(1)
       await loadMenuItems()
     } catch (error) {
       toast('error', error.message)
@@ -524,7 +661,7 @@ function App() {
     const file = event.target.files?.[0]
     if (!file) return
     if (file.size > MAX_IMAGE_FILE_BYTES) {
-      toast('error', 'Image is too large. Max size is 3 MB.')
+      toast('error', 'Изображение слишком большое. Максимум 3 МБ.')
       event.target.value = ''
       return
     }
@@ -532,7 +669,7 @@ function App() {
       const dataUrl = await fileToDataUrl(file)
       const compressed = await compressImageDataUrl(dataUrl)
       setItemForm((state) => ({ ...state, image: compressed }))
-      toast('success', 'Image selected and compressed.')
+      toast('success', 'Изображение выбрано и сжато.')
     } catch (error) {
       toast('error', error.message)
     }
@@ -545,7 +682,7 @@ function App() {
         method: 'PATCH',
         body: JSON.stringify({ isAvailableNow: !item.isAvailableNow }),
       })
-      toast('success', 'Availability updated.')
+      toast('success', 'Статус доступности обновлен.')
       await loadMenuItems()
     } catch (error) {
       toast('error', error.message)
@@ -563,7 +700,7 @@ function App() {
     setLoading(true)
     try {
       await api(`/admin/menu/items/${deleteCandidate.id}`, { method: 'DELETE' })
-      toast('success', 'Dish deleted.')
+      toast('success', 'Блюдо удалено.')
       setDeleteCandidate(null)
       await loadMenuItems()
     } catch (error) {
@@ -590,11 +727,11 @@ function App() {
           variants: [{
             name: item.variants?.[0]?.name || 'default',
             priceMinor: Number(item.variants?.[0]?.priceMinor || 0),
-            currency: item.variants?.[0]?.currency || 'USD',
+            currency: item.variants?.[0]?.currency || 'KZT',
           }],
         }),
       })
-      toast('success', 'Dish duplicated.')
+      toast('success', 'Блюдо скопировано.')
       await loadMenuItems()
     } catch (error) {
       toast('error', error.message)
@@ -611,18 +748,40 @@ function App() {
     setEditItemForm({
       id: item.id,
       name: item.name || '',
+      nameI18n: {
+        kk: item.nameI18n?.kk || '',
+        ru: item.nameI18n?.ru || item.name || '',
+        en: item.nameI18n?.en || '',
+      },
       categoryId: item.categoryId || '',
       oldPriceMinor: discount > 0 ? String(basePrice) : '',
       newPriceMinor: String(effectivePrice || 0),
       description: item.description || '',
+      descriptionI18n: {
+        kk: item.descriptionI18n?.kk || '',
+        ru: item.descriptionI18n?.ru || item.description || '',
+        en: item.descriptionI18n?.en || '',
+      },
       recipeText: Array.isArray(item.recipe) ? item.recipe.join('\n') : (item.recipe || ''),
+      recipeI18n: {
+        kk: Array.isArray(item.recipeI18n?.kk) ? item.recipeI18n.kk.join('\n') : '',
+        ru: Array.isArray(item.recipeI18n?.ru) ? item.recipeI18n.ru.join('\n') : (Array.isArray(item.recipe) ? item.recipe.join('\n') : (item.recipe || '')),
+        en: Array.isArray(item.recipeI18n?.en) ? item.recipeI18n.en.join('\n') : '',
+      },
       image: item.image || '',
       isAvailableNow: Boolean(item.isAvailableNow),
     })
+    setEditDishStep(1)
   }
 
   const closeEditItem = () => {
     setEditingItem(null)
+    setEditDishStep(1)
+  }
+
+  const closeCreateItem = () => {
+    setCreatingDish(false)
+    setCreateDishStep(1)
   }
 
   const onSaveEditItem = async (event) => {
@@ -630,24 +789,44 @@ function App() {
     setLoading(true)
     try {
       const priceData = splitPrices(editItemForm.oldPriceMinor, editItemForm.newPriceMinor)
-      if (!editItemForm.name.trim()) throw new Error('Dish name is required.')
-      if (!editItemForm.categoryId) throw new Error('Category is required.')
+      const ruName = String(editItemForm.nameI18n.ru || '').trim()
+      if (!ruName) throw new Error('Название блюда (RU) обязательно.')
+      if (!editItemForm.categoryId) throw new Error('Категория обязательна.')
+      validateRuBaseText(editItemForm.nameI18n, 'Название блюда')
+      validateRuBaseText(editItemForm.descriptionI18n, 'Описание блюда')
+      validateRuBaseText(editItemForm.recipeI18n, 'Рецепт блюда')
 
       await api(`/admin/menu/items/${editItemForm.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
-          name: editItemForm.name,
+          name: ruName,
+          nameI18n: {
+            kk: editItemForm.nameI18n.kk,
+            ru: ruName,
+            en: editItemForm.nameI18n.en,
+          },
           categoryId: editItemForm.categoryId,
           discountMinor: priceData.discountMinor,
           discountIsActive: priceData.discountIsActive,
           description: editItemForm.description,
+          descriptionI18n: {
+            kk: editItemForm.descriptionI18n.kk,
+            ru: editItemForm.descriptionI18n.ru || editItemForm.description,
+            en: editItemForm.descriptionI18n.en,
+          },
           recipe: parseRecipe(editItemForm.recipeText),
+          recipeI18n: {
+            kk: parseRecipe(editItemForm.recipeI18n.kk),
+            ru: parseRecipe(editItemForm.recipeI18n.ru || editItemForm.recipeText),
+            en: parseRecipe(editItemForm.recipeI18n.en),
+          },
           image: editItemForm.image,
+          priceByCurrency: { KZT: priceData.priceMinor },
           isAvailableNow: editItemForm.isAvailableNow,
-          variants: [{ name: 'default', priceMinor: priceData.priceMinor, currency: 'USD' }],
+          variants: [{ name: 'default', priceMinor: priceData.priceMinor, currency: 'KZT' }],
         }),
       })
-      toast('success', 'Dish updated.')
+      toast('success', 'Блюдо обновлено.')
       closeEditItem()
       await loadMenuItems()
     } catch (error) {
@@ -661,7 +840,7 @@ function App() {
     const file = event.target.files?.[0]
     if (!file) return
     if (file.size > MAX_IMAGE_FILE_BYTES) {
-      toast('error', 'Image is too large. Max size is 3 MB.')
+      toast('error', 'Изображение слишком большое. Максимум 3 МБ.')
       event.target.value = ''
       return
     }
@@ -669,7 +848,7 @@ function App() {
       const dataUrl = await fileToDataUrl(file)
       const compressed = await compressImageDataUrl(dataUrl)
       setEditItemForm((state) => ({ ...state, image: compressed }))
-      toast('success', 'Image selected and compressed.')
+      toast('success', 'Изображение выбрано и сжато.')
     } catch (error) {
       toast('error', error.message)
     }
@@ -679,7 +858,7 @@ function App() {
     const file = event.target.files?.[0]
     if (!file) return
     if (file.size > MAX_IMAGE_FILE_BYTES) {
-      toast('error', 'Image is too large. Max size is 3 MB.')
+      toast('error', 'Изображение слишком большое. Максимум 3 МБ.')
       event.target.value = ''
       return
     }
@@ -687,7 +866,7 @@ function App() {
       const dataUrl = await fileToDataUrl(file)
       const compressed = await compressImageDataUrl(dataUrl)
       setRestaurantProfile((state) => ({ ...state, previewImage: compressed }))
-      toast('success', 'Preview image selected and compressed.')
+      toast('success', 'Превью изображения выбрано и сжато.')
     } catch (error) {
       toast('error', error.message)
     }
@@ -701,8 +880,120 @@ function App() {
         method: 'PATCH',
         body: JSON.stringify(restaurantProfile),
       })
-      toast('success', 'Restaurant profile updated.')
+      toast('success', 'Профиль ресторана обновлен.')
       await loadRestaurantProfile()
+    } catch (error) {
+      toast('error', error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const translateRuText = async (text) => {
+    const value = String(text || '').trim()
+    if (!value) throw new Error('Сначала заполните русский текст.')
+    const data = await api('/admin/i18n/translate', {
+      method: 'POST',
+      body: JSON.stringify({ text: value, sourceLang: 'ru', targets: ['kk', 'en'] }),
+    })
+    return {
+      kk: data.translations?.kk || '',
+      en: data.translations?.en || '',
+      ru: value,
+    }
+  }
+
+  const onTranslateCategoryNameCreate = async () => {
+    setLoading(true)
+    try {
+      const translated = await translateRuText(categoryForm.nameI18n.ru)
+      setCategoryForm((state) => ({ ...state, nameI18n: { ...state.nameI18n, ...translated }, name: translated.ru }))
+      toast('success', 'Категория переведена на kk/en.')
+    } catch (error) {
+      toast('error', error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onTranslateCategoryNameEdit = async () => {
+    setLoading(true)
+    try {
+      const translated = await translateRuText(editCategoryForm.nameI18n.ru)
+      setEditCategoryForm((state) => ({ ...state, nameI18n: { ...state.nameI18n, ...translated }, name: translated.ru }))
+      toast('success', 'Категория переведена на kk/en.')
+    } catch (error) {
+      toast('error', error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onTranslateDishCreate = async () => {
+    setLoading(true)
+    try {
+      const nameTranslated = await translateRuText(itemForm.nameI18n.ru)
+      const descriptionTranslated = await translateRuText(itemForm.descriptionI18n.ru || itemForm.description)
+      const recipeTranslated = await translateRuText(itemForm.recipeI18n.ru || itemForm.recipeText)
+      setItemForm((state) => ({
+        ...state,
+        name: nameTranslated.ru,
+        description: descriptionTranslated.ru,
+        recipeText: recipeTranslated.ru,
+        nameI18n: { ...state.nameI18n, ...nameTranslated },
+        descriptionI18n: { ...state.descriptionI18n, ...descriptionTranslated },
+        recipeI18n: { ...state.recipeI18n, ...recipeTranslated },
+      }))
+      toast('success', 'Блюдо переведено на kk/en.')
+    } catch (error) {
+      toast('error', error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onTranslateDishEdit = async () => {
+    setLoading(true)
+    try {
+      const nameTranslated = await translateRuText(editItemForm.nameI18n.ru)
+      const descriptionTranslated = await translateRuText(editItemForm.descriptionI18n.ru || editItemForm.description)
+      const recipeTranslated = await translateRuText(editItemForm.recipeI18n.ru || editItemForm.recipeText)
+      setEditItemForm((state) => ({
+        ...state,
+        name: nameTranslated.ru,
+        description: descriptionTranslated.ru,
+        recipeText: recipeTranslated.ru,
+        nameI18n: { ...state.nameI18n, ...nameTranslated },
+        descriptionI18n: { ...state.descriptionI18n, ...descriptionTranslated },
+        recipeI18n: { ...state.recipeI18n, ...recipeTranslated },
+      }))
+      toast('success', 'Блюдо переведено на kk/en.')
+    } catch (error) {
+      toast('error', error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onTranslateRestaurantAbout = async () => {
+    const text = (restaurantProfile.aboutI18n?.ru || restaurantProfile.about || '').trim()
+    if (!text) return toast('error', 'Сначала заполните русский текст описания.')
+    setLoading(true)
+    try {
+      const data = await api('/admin/i18n/translate', {
+        method: 'POST',
+        body: JSON.stringify({ text, sourceLang: 'ru', targets: ['kk', 'en'] }),
+      })
+      setRestaurantProfile((state) => ({
+        ...state,
+        aboutI18n: {
+          ...state.aboutI18n,
+          kk: data.translations?.kk || state.aboutI18n.kk,
+          en: data.translations?.en || state.aboutI18n.en,
+          ru: text,
+        },
+      }))
+      toast('success', 'Описание переведено на kk/en.')
     } catch (error) {
       toast('error', error.message)
     } finally {
@@ -712,20 +1003,20 @@ function App() {
 
   const renderRestaurants = () => (
     <section className="panel">
-      <h2>Restaurants</h2>
+      <h2>Рестораны</h2>
       <form className="invite" onSubmit={onCreateRestaurant}>
-        <input value={restaurantForm.name} onChange={(e) => setRestaurantForm((s) => ({ ...s, name: e.target.value }))} placeholder="Restaurant name" required />
+        <input value={restaurantForm.name} onChange={(e) => setRestaurantForm((s) => ({ ...s, name: e.target.value }))} placeholder="Название ресторана" required />
         <input value={restaurantForm.slug} onChange={(e) => setRestaurantForm((s) => ({ ...s, slug: e.target.value }))} placeholder="slug" required />
-        <button disabled={loading} type="submit">Add restaurant</button>
+        <button disabled={loading} type="submit">Добавить ресторан</button>
       </form>
       <div className="staff-list">
-        {restaurants.length === 0 && <article><strong>Empty</strong><span>No restaurants yet.</span></article>}
+        {restaurants.length === 0 && <article><strong>Пусто</strong><span>Ресторанов пока нет.</span></article>}
         {restaurants.map((item) => (
           <article key={item.id}>
             <strong>{item.name}</strong>
             <span>{item.slug}</span>
-            <span>{item.isActive ? 'active' : 'inactive'}</span>
-            <div className="actions"><button disabled={loading} type="button" onClick={() => onDeleteRestaurant(item.id)}>Delete</button></div>
+            <span>{item.isActive ? 'активен' : 'неактивен'}</span>
+            <div className="actions"><button disabled={loading} type="button" onClick={() => onDeleteRestaurant(item.id)}>Удалить</button></div>
           </article>
         ))}
       </div>
@@ -734,7 +1025,7 @@ function App() {
 
   const renderStaff = () => (
     <section className="panel">
-      <h2>Staff</h2>
+      <h2>Персонал</h2>
       {isSuper && (
         <div className="invite">
           <select value={selectedRestaurantId} onChange={(e) => { setSelectedRestaurantId(e.target.value); setInviteForm((s) => ({ ...s, restaurantId: e.target.value })) }}>
@@ -745,25 +1036,25 @@ function App() {
         </div>
       )}
       <form className="invite" onSubmit={onInvite}>
-        <input value={inviteForm.username} onChange={(e) => setInviteForm((s) => ({ ...s, username: e.target.value }))} placeholder="Telegram username" required />
+        <input value={inviteForm.username} onChange={(e) => setInviteForm((s) => ({ ...s, username: e.target.value }))} placeholder="Username в Telegram" required />
         <select value={inviteForm.role} onChange={(e) => setInviteForm((s) => ({ ...s, role: e.target.value }))}>
-          {isSuper ? <option value="admin">admin</option> : <option value="manager">manager</option>}
+          {isSuper ? <option value="admin">админ</option> : <option value="manager">менеджер</option>}
         </select>
         {isSuper ? (
           <select value={inviteForm.restaurantId} onChange={(e) => setInviteForm((s) => ({ ...s, restaurantId: e.target.value }))}>
             {restaurants.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         ) : <span />}
-        <button disabled={loading} type="submit">Invite</button>
+        <button disabled={loading} type="submit">Пригласить</button>
       </form>
       <div className="staff-list">
-        {staffItems.length === 0 && <article><strong>Empty</strong><span>No staff in selected restaurant.</span></article>}
+        {staffItems.length === 0 && <article><strong>Пусто</strong><span>В выбранном ресторане нет персонала.</span></article>}
         {staffItems.map((item) => (
           <article key={item.id}>
             <strong>@{item.username || 'unknown'}</strong>
-            <span>{item.role}</span>
-            <span>{item.status}</span>
-            <div className="actions"><button disabled={loading} type="button" onClick={() => onRevokeStaff(item.id)}>Revoke</button></div>
+            <span>{roleLabel(item.role)}</span>
+            <span>{staffStatusLabel(item.status)}</span>
+            <div className="actions"><button disabled={loading} type="button" onClick={() => onRevokeStaff(item.id)}>Отозвать</button></div>
           </article>
         ))}
       </div>
@@ -773,19 +1064,19 @@ function App() {
   const renderCategories = () => (
     <section className="panel">
       <div className="section-head">
-        <h2>Categories</h2>
-        <button disabled={loading} type="button" onClick={() => setCreatingCategory(true)}>Add category</button>
+        <h2>Категории</h2>
+        <button disabled={loading} type="button" onClick={() => setCreatingCategory(true)}>Добавить категорию</button>
       </div>
       <div className="category-toolbar">
         <input
           value={categorySearch}
           onChange={(e) => setCategorySearch(e.target.value)}
-          placeholder="Search categories"
+          placeholder="Поиск категорий"
         />
-        <span className="category-count">{filteredCategories.length} found</span>
+        <span className="category-count">Найдено: {filteredCategories.length}</span>
       </div>
       <div className="category-grid">
-        {filteredCategories.length === 0 && <article className="category-card"><strong>Empty</strong><span>No categories found.</span></article>}
+        {filteredCategories.length === 0 && <article className="category-card"><strong>Пусто</strong><span>Категории не найдены.</span></article>}
         {filteredCategories.map((item) => (
           <article
             className={`category-card ${draggingCategoryId === item.id ? 'dragging' : ''}`}
@@ -802,11 +1093,11 @@ function App() {
             {item.image && <img className="category-thumb" src={item.image} alt={`${item.name} category`} />}
             <div className="category-card-head">
               <strong>{item.name}</strong>
-              <span className={`status-pill ${item.isActive ? 'on' : 'off'}`}>{item.isActive ? 'active' : 'inactive'}</span>
+              <span className={`status-pill ${item.isActive ? 'on' : 'off'}`}>{item.isActive ? 'активна' : 'неактивна'}</span>
             </div>
-            <span className="category-meta">{item.itemsCount} dishes</span>
+            <span className="category-meta">{item.itemsCount} блюд</span>
             <div className="actions">
-              <button disabled={loading} type="button" onClick={() => openEditCategory(item)}>Edit</button>
+              <button disabled={loading} type="button" onClick={() => openEditCategory(item)}>Изменить</button>
             </div>
           </article>
         ))}
@@ -815,19 +1106,21 @@ function App() {
       {editingCategory && (
         <div className="modal-backdrop" onClick={closeEditCategory}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h3>Edit Category</h3>
+            <h3>Изменить категорию</h3>
             <form className="invite" onSubmit={onSaveEditCategory}>
-              <input value={editCategoryForm.name} onChange={(e) => setEditCategoryForm((s) => ({ ...s, name: e.target.value }))} placeholder="Category name" required />
-              <input value={editCategoryForm.image} onChange={(e) => setEditCategoryForm((s) => ({ ...s, image: e.target.value }))} placeholder="Category image URL" />
+              <input {...ruTextInputProps} value={editCategoryForm.nameI18n.ru} onChange={(e) => setEditCategoryForm((s) => ({ ...s, name: e.target.value, nameI18n: { ...s.nameI18n, ru: e.target.value } }))} placeholder="Название категории (RU)" required />
+              <button disabled={loading} type="button" onClick={onTranslateCategoryNameEdit}>{'Перевести RU в KK/EN'}</button>
+              <input value={editCategoryForm.nameI18n.kk} onChange={(e) => setEditCategoryForm((s) => ({ ...s, nameI18n: { ...s.nameI18n, kk: e.target.value } }))} placeholder="Название категории (KK)" />
+              <input value={editCategoryForm.nameI18n.en} onChange={(e) => setEditCategoryForm((s) => ({ ...s, nameI18n: { ...s.nameI18n, en: e.target.value } }))} placeholder="Название категории (EN)" />
               <input type="file" accept="image/*" onChange={onPickEditCategoryImage} />
               {editCategoryForm.image && <img className="image-preview" src={editCategoryForm.image} alt="Category preview" />}
               <select value={String(editCategoryForm.isActive)} onChange={(e) => setEditCategoryForm((s) => ({ ...s, isActive: e.target.value === 'true' }))}>
-                <option value="true">active</option>
-                <option value="false">inactive</option>
+                <option value="true">активна</option>
+                <option value="false">неактивна</option>
               </select>
-              <button disabled={loading} type="submit">Save</button>
+              <button disabled={loading} type="submit">Сохранить</button>
             </form>
-            <button className="close-btn" type="button" onClick={closeEditCategory}>Close</button>
+            <button className="close-btn" type="button" onClick={closeEditCategory}>Закрыть</button>
           </div>
         </div>
       )}
@@ -835,19 +1128,21 @@ function App() {
       {creatingCategory && (
         <div className="modal-backdrop" onClick={() => setCreatingCategory(false)}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h3>Add Category</h3>
+            <h3>Добавить категорию</h3>
             <form className="invite" onSubmit={onCreateCategory}>
-              <input value={categoryForm.name} onChange={(e) => setCategoryForm((s) => ({ ...s, name: e.target.value }))} placeholder="Category name" required />
-              <input value={categoryForm.image} onChange={(e) => setCategoryForm((s) => ({ ...s, image: e.target.value }))} placeholder="Category image URL" />
+              <input {...ruTextInputProps} value={categoryForm.nameI18n.ru} onChange={(e) => setCategoryForm((s) => ({ ...s, name: e.target.value, nameI18n: { ...s.nameI18n, ru: e.target.value } }))} placeholder="Название категории (RU)" required />
+              <button disabled={loading} type="button" onClick={onTranslateCategoryNameCreate}>{'Перевести RU в KK/EN'}</button>
+              <input value={categoryForm.nameI18n.kk} onChange={(e) => setCategoryForm((s) => ({ ...s, nameI18n: { ...s.nameI18n, kk: e.target.value } }))} placeholder="Название категории (KK)" />
+              <input value={categoryForm.nameI18n.en} onChange={(e) => setCategoryForm((s) => ({ ...s, nameI18n: { ...s.nameI18n, en: e.target.value } }))} placeholder="Название категории (EN)" />
               <input type="file" accept="image/*" onChange={onPickCreateCategoryImage} />
               {categoryForm.image && <img className="image-preview" src={categoryForm.image} alt="Category preview" />}
               <select value={String(categoryForm.isActive)} onChange={(e) => setCategoryForm((s) => ({ ...s, isActive: e.target.value === 'true' }))}>
-                <option value="true">active</option>
-                <option value="false">inactive</option>
+                <option value="true">активна</option>
+                <option value="false">неактивна</option>
               </select>
-              <button disabled={loading} type="submit">Create</button>
+              <button disabled={loading} type="submit">Создать</button>
             </form>
-            <button className="close-btn" type="button" onClick={() => setCreatingCategory(false)}>Close</button>
+            <button className="close-btn" type="button" onClick={() => setCreatingCategory(false)}>Закрыть</button>
           </div>
         </div>
       )}
@@ -855,22 +1150,114 @@ function App() {
   )
 
   const renderRestaurantProfile = () => (
-    <section className="panel">
-      <div className="section-head"><h2>Restaurant Info</h2></div>
-      <form className="invite" onSubmit={onSaveRestaurantProfile}>
-        <input value={restaurantProfile.name} onChange={(e) => setRestaurantProfile((s) => ({ ...s, name: e.target.value }))} placeholder="Restaurant name" required />
-        <input value={restaurantProfile.previewImage} onChange={(e) => setRestaurantProfile((s) => ({ ...s, previewImage: e.target.value }))} placeholder="Preview image URL" />
-        <input type="file" accept="image/*" onChange={onPickRestaurantPreview} />
-        {restaurantProfile.previewImage && <img className="image-preview" src={restaurantProfile.previewImage} alt="Restaurant preview" />}
-        <textarea value={restaurantProfile.about} onChange={(e) => setRestaurantProfile((s) => ({ ...s, about: e.target.value }))} placeholder="About restaurant" rows={3} />
-        <input value={restaurantProfile.workingHours.mon} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, mon: e.target.value } }))} placeholder="Mon 09:00-22:00" />
-        <input value={restaurantProfile.workingHours.tue} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, tue: e.target.value } }))} placeholder="Tue 09:00-22:00" />
-        <input value={restaurantProfile.workingHours.wed} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, wed: e.target.value } }))} placeholder="Wed 09:00-22:00" />
-        <input value={restaurantProfile.workingHours.thu} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, thu: e.target.value } }))} placeholder="Thu 09:00-22:00" />
-        <input value={restaurantProfile.workingHours.fri} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, fri: e.target.value } }))} placeholder="Fri 09:00-22:00" />
-        <input value={restaurantProfile.workingHours.sat} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, sat: e.target.value } }))} placeholder="Sat 09:00-22:00" />
-        <input value={restaurantProfile.workingHours.sun} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, sun: e.target.value } }))} placeholder="Sun 09:00-22:00" />
-        <button disabled={loading} type="submit">Save</button>
+    <section className="panel restaurant-profile-panel">
+      <div className="section-head"><h2>Информация о ресторане</h2></div>
+      <p className="restaurant-profile-note">Заполните профиль аккуратно: эти данные видят гости в Mini App.</p>
+      <form className="restaurant-profile-form" onSubmit={onSaveRestaurantProfile}>
+        <section className="profile-card">
+          <h3>Основное</h3>
+          <div className="profile-card-grid">
+            <input value={restaurantProfile.name} onChange={(e) => setRestaurantProfile((s) => ({ ...s, name: e.target.value }))} placeholder="Название ресторана" required />
+            <input type="file" accept="image/*" onChange={onPickRestaurantPreview} />
+          </div>
+          {restaurantProfile.previewImage && <img className="image-preview" src={restaurantProfile.previewImage} alt="Restaurant preview" />}
+        </section>
+
+        <section className="profile-card">
+          <h3>О ресторане</h3>
+          <textarea
+            {...ruTextInputProps}
+            value={restaurantProfile.aboutI18n.ru}
+            onChange={(e) => setRestaurantProfile((s) => ({ ...s, about: e.target.value, aboutI18n: { ...s.aboutI18n, ru: e.target.value } }))}
+            placeholder="Описание (RU)"
+            rows={3}
+          />
+          <button disabled={loading} type="button" onClick={onTranslateRestaurantAbout}>{'Перевести RU в KK/EN'}</button>
+          <div className="profile-card-grid">
+            <textarea
+              value={restaurantProfile.aboutI18n.kk}
+              onChange={(e) => setRestaurantProfile((s) => ({ ...s, aboutI18n: { ...s.aboutI18n, kk: e.target.value } }))}
+              placeholder="Описание (KK)"
+              rows={3}
+            />
+            <textarea
+              value={restaurantProfile.aboutI18n.en}
+              onChange={(e) => setRestaurantProfile((s) => ({ ...s, aboutI18n: { ...s.aboutI18n, en: e.target.value } }))}
+              placeholder="Описание (EN)"
+              rows={3}
+            />
+          </div>
+        </section>
+
+        <section className="profile-card">
+          <h3>График работы</h3>
+          <div className="hours-grid">
+            {WEEK_DAYS.map((day) => (
+              <article className="hours-day-card" key={day}>
+                <div className="hours-day-head">
+                  <strong>{DAY_LABELS[day] || day.toUpperCase()}</strong>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(restaurantProfile.workingHours?.[day]?.isOpen)}
+                      onChange={(e) => setRestaurantProfile((s) => ({
+                        ...s,
+                        workingHours: {
+                          ...s.workingHours,
+                          [day]: {
+                            ...(s.workingHours?.[day] || { isOpen: true, openAt: '09:00', closeAt: '22:00' }),
+                            isOpen: e.target.checked,
+                          },
+                        },
+                      }))}
+                    />
+                    Открыто
+                  </label>
+                </div>
+                <div className="hours-time-grid">
+                  <label className="hours-time-field">
+                    <span>Открытие</span>
+                    <input
+                      type="time"
+                      value={restaurantProfile.workingHours?.[day]?.openAt || '09:00'}
+                      onChange={(e) => setRestaurantProfile((s) => ({
+                        ...s,
+                        workingHours: {
+                          ...s.workingHours,
+                          [day]: {
+                            ...(s.workingHours?.[day] || { isOpen: true, openAt: '09:00', closeAt: '22:00' }),
+                            openAt: e.target.value,
+                          },
+                        },
+                      }))}
+                    />
+                  </label>
+                  <label className="hours-time-field">
+                    <span>Закрытие</span>
+                    <input
+                      type="time"
+                      value={restaurantProfile.workingHours?.[day]?.closeAt || '22:00'}
+                      onChange={(e) => setRestaurantProfile((s) => ({
+                        ...s,
+                        workingHours: {
+                          ...s.workingHours,
+                          [day]: {
+                            ...(s.workingHours?.[day] || { isOpen: true, openAt: '09:00', closeAt: '22:00' }),
+                            closeAt: e.target.value,
+                          },
+                        },
+                      }))}
+                    />
+                  </label>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <div className="restaurant-profile-footer">
+          <button disabled={loading} type="submit">Сохранить</button>
+        </div>
       </form>
     </section>
   )
@@ -878,35 +1265,35 @@ function App() {
   const renderItems = () => (
     <section className="panel">
       <div className="section-head">
-        <h2>Dishes</h2>
-        <button disabled={loading} type="button" onClick={() => setCreatingDish(true)}>Add dish</button>
+        <h2>Блюда</h2>
+        <button disabled={loading} type="button" onClick={() => { setCreateDishStep(1); setCreatingDish(true) }}>Добавить блюдо</button>
       </div>
       <div className="filters-bar sticky-filters">
-        <input value={dishSearch} onChange={(e) => setDishSearch(e.target.value)} placeholder="Search dishes" />
+        <input value={dishSearch} onChange={(e) => setDishSearch(e.target.value)} placeholder="Поиск блюд" />
         <select value={selectedCategoryId} onChange={(e) => { setSelectedCategoryId(e.target.value); setItemForm((s) => ({ ...s, categoryId: e.target.value })) }}>
-          <option value="">All categories</option>
+          <option value="">Все категории</option>
           {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
         <select value={dishSort} onChange={(e) => setDishSort(e.target.value)}>
-          <option value="name_asc">Name A-Z</option>
-          <option value="name_desc">Name Z-A</option>
-          <option value="price_asc">Price Low-High</option>
-          <option value="price_desc">Price High-Low</option>
+          <option value="name_asc">Имя А-Я</option>
+          <option value="name_desc">Имя Я-А</option>
+          <option value="price_asc">Цена по возрастанию</option>
+          <option value="price_desc">Цена по убыванию</option>
         </select>
       </div>
       <div className="table-wrap">
         {filteredDishes.length === 0 ? (
-          <div className="empty-note">No dishes for selected filter.</div>
+          <div className="empty-note">Нет блюд для выбранного фильтра.</div>
         ) : (
           <table className="items-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Category</th>
-                <th>Old price</th>
-                <th>New price</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th>Название</th>
+                <th>Категория</th>
+                <th>Старая цена</th>
+                <th>Новая цена</th>
+                <th>Статус</th>
+                <th>Действия</th>
               </tr>
             </thead>
             <tbody>
@@ -920,20 +1307,20 @@ function App() {
                       </ul>
                     )}
                   </td>
-                  <td>{categoryNameById.get(item.categoryId) || 'Uncategorized'}</td>
+                  <td>{categoryNameById.get(item.categoryId) || 'Без категории'}</td>
                   <td>{item.discountIsActive ? Number(item.variants?.[0]?.priceMinor || 0).toLocaleString() : '-'}</td>
                   <td>
                     {Number((item.variants?.[0]?.priceMinor || 0) - (item.discountMinor || 0)).toLocaleString()}
                   </td>
                   <td>
                     <span className={`status-pill ${item.isAvailableNow ? 'on' : 'off'}`}>
-                      {item.isAvailableNow ? 'available' : 'hidden'}
+                      {item.isAvailableNow ? 'доступно' : 'скрыто'}
                     </span>
                   </td>
                   <td>
                     <div className="actions">
-                      <button disabled={loading} type="button" onClick={() => openEditItem(item)}>Edit</button>
-                      <button disabled={loading} type="button" onClick={() => onDuplicateItem(item)}>Copy</button>
+                      <button disabled={loading} type="button" onClick={() => openEditItem(item)}>Изменить</button>
+                      <button disabled={loading} type="button" onClick={() => onDuplicateItem(item)}>Копировать</button>
                       <label className="switch">
                         <input
                           type="checkbox"
@@ -941,9 +1328,9 @@ function App() {
                           disabled={loading}
                           onChange={() => onToggleAvailability(item)}
                         />
-                        <span>On</span>
+                        <span>Вкл</span>
                       </label>
-                      <button disabled={loading} type="button" onClick={() => onDeleteItem(item)}>Delete</button>
+                      <button disabled={loading} type="button" onClick={() => onDeleteItem(item)}>Удалить</button>
                     </div>
                   </td>
                 </tr>
@@ -955,52 +1342,115 @@ function App() {
 
       {editingItem && (
         <div className="modal-backdrop" onClick={closeEditItem}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h3>Edit Dish</h3>
+          <div className="modal dish-wizard" onClick={(event) => event.stopPropagation()}>
+            <h3>Изменить блюдо</h3>
+            <p className="wizard-step-title">Шаг {editDishStep} из 4</p>
             <form className="invite" onSubmit={onSaveEditItem}>
-              <input value={editItemForm.name} onChange={(e) => setEditItemForm((s) => ({ ...s, name: e.target.value }))} placeholder="Dish name" required />
-              <select value={editItemForm.categoryId} onChange={(e) => setEditItemForm((s) => ({ ...s, categoryId: e.target.value }))} required>
-                <option value="">choose category</option>
-                {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-              <input value={editItemForm.oldPriceMinor} onChange={(e) => setEditItemForm((s) => ({ ...s, oldPriceMinor: e.target.value }))} placeholder="Old price" />
-              <input value={editItemForm.newPriceMinor} onChange={(e) => setEditItemForm((s) => ({ ...s, newPriceMinor: e.target.value }))} placeholder="New price" required />
-              <input value={editItemForm.image} onChange={(e) => setEditItemForm((s) => ({ ...s, image: e.target.value }))} placeholder="Photo URL" />
-              <input type="file" accept="image/*" onChange={onPickEditImage} />
-              {editItemForm.image && <img className="image-preview" src={editItemForm.image} alt="Dish preview" />}
-              <input value={editItemForm.description} onChange={(e) => setEditItemForm((s) => ({ ...s, description: e.target.value }))} placeholder="Description" />
-              <textarea value={editItemForm.recipeText} onChange={(e) => setEditItemForm((s) => ({ ...s, recipeText: e.target.value }))} placeholder={'Recipe ingredients, one per line\nbeef\ntomato\ncucumber'} rows={4} />
-              <select value={String(editItemForm.isAvailableNow)} onChange={(e) => setEditItemForm((s) => ({ ...s, isAvailableNow: e.target.value === 'true' }))}>
-                <option value="true">available</option>
-                <option value="false">hidden</option>
-              </select>
-              <button disabled={loading} type="submit">Save</button>
+              {editDishStep === 1 && (
+                <>
+                  <input {...ruTextInputProps} value={editItemForm.nameI18n.ru} onChange={(e) => setEditItemForm((s) => ({ ...s, name: e.target.value, nameI18n: { ...s.nameI18n, ru: e.target.value } }))} placeholder="Название блюда (RU)" required />
+                  <select value={editItemForm.categoryId} onChange={(e) => setEditItemForm((s) => ({ ...s, categoryId: e.target.value }))} required>
+                    <option value="">выберите категорию</option>
+                    {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                  <input value={editItemForm.oldPriceMinor} onChange={(e) => setEditItemForm((s) => ({ ...s, oldPriceMinor: e.target.value }))} placeholder="Старая цена (KZT)" />
+                  <input value={editItemForm.newPriceMinor} onChange={(e) => setEditItemForm((s) => ({ ...s, newPriceMinor: e.target.value }))} placeholder="Новая цена (KZT)" required />
+                  {!!getStepOneError(editItemForm) && <p className="wizard-error">{getStepOneError(editItemForm)}</p>}
+                </>
+              )}
+              {editDishStep === 2 && (
+                <>
+                  <textarea {...ruTextInputProps} value={editItemForm.descriptionI18n.ru} onChange={(e) => setEditItemForm((s) => ({ ...s, description: e.target.value, descriptionI18n: { ...s.descriptionI18n, ru: e.target.value } }))} placeholder="Описание (RU)" rows={3} />
+                  <textarea {...ruTextInputProps} value={editItemForm.recipeText} onChange={(e) => setEditItemForm((s) => ({ ...s, recipeText: e.target.value, recipeI18n: { ...s.recipeI18n, ru: e.target.value } }))} placeholder={'Recipe ingredients (RU), one per line\nbeef\ntomato\ncucumber'} rows={4} />
+                </>
+              )}
+              {editDishStep === 3 && (
+                <>
+                  <button disabled={loading} type="button" onClick={onTranslateDishEdit}>{'Перевести RU в KK/EN'}</button>
+                  <input value={editItemForm.nameI18n.kk} onChange={(e) => setEditItemForm((s) => ({ ...s, nameI18n: { ...s.nameI18n, kk: e.target.value } }))} placeholder="Dish name (KK)" />
+                  <input value={editItemForm.nameI18n.en} onChange={(e) => setEditItemForm((s) => ({ ...s, nameI18n: { ...s.nameI18n, en: e.target.value } }))} placeholder="Dish name (EN)" />
+                  <textarea value={editItemForm.descriptionI18n.kk} onChange={(e) => setEditItemForm((s) => ({ ...s, descriptionI18n: { ...s.descriptionI18n, kk: e.target.value } }))} placeholder="Description (KK)" rows={3} />
+                  <textarea value={editItemForm.descriptionI18n.en} onChange={(e) => setEditItemForm((s) => ({ ...s, descriptionI18n: { ...s.descriptionI18n, en: e.target.value } }))} placeholder="Description (EN)" rows={3} />
+                  <textarea value={editItemForm.recipeI18n.kk} onChange={(e) => setEditItemForm((s) => ({ ...s, recipeI18n: { ...s.recipeI18n, kk: e.target.value } }))} placeholder={'Recipe ingredients (KK), one per line'} rows={4} />
+                  <textarea value={editItemForm.recipeI18n.en} onChange={(e) => setEditItemForm((s) => ({ ...s, recipeI18n: { ...s.recipeI18n, en: e.target.value } }))} placeholder={'Recipe ingredients (EN), one per line'} rows={4} />
+                </>
+              )}
+              {editDishStep === 4 && (
+                <>
+                  <input type="file" accept="image/*" onChange={onPickEditImage} />
+                  {editItemForm.image && <img className="image-preview" src={editItemForm.image} alt="Dish preview" />}
+                  <select value={String(editItemForm.isAvailableNow)} onChange={(e) => setEditItemForm((s) => ({ ...s, isAvailableNow: e.target.value === 'true' }))}>
+                    <option value="true">доступно</option>
+                    <option value="false">скрыто</option>
+                  </select>
+                </>
+              )}
+              <div className="wizard-footer">
+                <button type="button" className="close-btn" onClick={closeEditItem}>Закрыть</button>
+                <button disabled={loading || editDishStep === 1} type="button" onClick={() => setEditDishStep((step) => Math.max(1, step - 1))}>Назад</button>
+                {editDishStep < 4 ? (
+                  <button disabled={loading || (editDishStep === 1 && !canContinueFromStepOne(editItemForm))} type="button" onClick={() => setEditDishStep((step) => Math.min(4, step + 1))}>Далее</button>
+                ) : (
+                  <button disabled={loading} type="submit">Сохранить</button>
+                )}
+              </div>
             </form>
-            <button className="close-btn" type="button" onClick={closeEditItem}>Close</button>
           </div>
         </div>
       )}
 
       {creatingDish && (
-        <div className="modal-backdrop" onClick={() => setCreatingDish(false)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()}>
-            <h3>Add Dish</h3>
+        <div className="modal-backdrop" onClick={closeCreateItem}>
+          <div className="modal dish-wizard" onClick={(event) => event.stopPropagation()}>
+            <h3>Добавить блюдо</h3>
+            <p className="wizard-step-title">Шаг {createDishStep} из 4</p>
             <form className="invite" onSubmit={onCreateItem}>
-              <input value={itemForm.name} onChange={(e) => setItemForm((s) => ({ ...s, name: e.target.value }))} placeholder="Dish name" required />
-              <select value={itemForm.categoryId} onChange={(e) => setItemForm((s) => ({ ...s, categoryId: e.target.value }))} required>
-                <option value="">choose category</option>
-                {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>
-              <input value={itemForm.oldPriceMinor} onChange={(e) => setItemForm((s) => ({ ...s, oldPriceMinor: e.target.value }))} placeholder="Old price" />
-              <input value={itemForm.newPriceMinor} onChange={(e) => setItemForm((s) => ({ ...s, newPriceMinor: e.target.value }))} placeholder="New price" required />
-              <input value={itemForm.image} onChange={(e) => setItemForm((s) => ({ ...s, image: e.target.value }))} placeholder="Photo URL" />
-              <input type="file" accept="image/*" onChange={onPickCreateImage} />
-              {itemForm.image && <img className="image-preview" src={itemForm.image} alt="Dish preview" />}
-              <input value={itemForm.description} onChange={(e) => setItemForm((s) => ({ ...s, description: e.target.value }))} placeholder="Description" />
-              <textarea value={itemForm.recipeText} onChange={(e) => setItemForm((s) => ({ ...s, recipeText: e.target.value }))} placeholder={'Recipe ingredients, one per line\nbeef\ntomato\ncucumber'} rows={4} />
-              <button disabled={loading} type="submit">Create</button>
+              {createDishStep === 1 && (
+                <>
+                  <input {...ruTextInputProps} value={itemForm.nameI18n.ru} onChange={(e) => setItemForm((s) => ({ ...s, name: e.target.value, nameI18n: { ...s.nameI18n, ru: e.target.value } }))} placeholder="Название блюда (RU)" required />
+                  <select value={itemForm.categoryId} onChange={(e) => setItemForm((s) => ({ ...s, categoryId: e.target.value }))} required>
+                    <option value="">выберите категорию</option>
+                    {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                  <input value={itemForm.oldPriceMinor} onChange={(e) => setItemForm((s) => ({ ...s, oldPriceMinor: e.target.value }))} placeholder="Старая цена (KZT)" />
+                  <input value={itemForm.newPriceMinor} onChange={(e) => setItemForm((s) => ({ ...s, newPriceMinor: e.target.value }))} placeholder="Новая цена (KZT)" required />
+                  {!!getStepOneError(itemForm) && <p className="wizard-error">{getStepOneError(itemForm)}</p>}
+                </>
+              )}
+              {createDishStep === 2 && (
+                <>
+                  <textarea {...ruTextInputProps} value={itemForm.descriptionI18n.ru} onChange={(e) => setItemForm((s) => ({ ...s, description: e.target.value, descriptionI18n: { ...s.descriptionI18n, ru: e.target.value } }))} placeholder="Описание (RU)" rows={3} />
+                  <textarea {...ruTextInputProps} value={itemForm.recipeText} onChange={(e) => setItemForm((s) => ({ ...s, recipeText: e.target.value, recipeI18n: { ...s.recipeI18n, ru: e.target.value } }))} placeholder={'Recipe ingredients (RU), one per line\nbeef\ntomato\ncucumber'} rows={4} />
+                </>
+              )}
+              {createDishStep === 3 && (
+                <>
+                  <button disabled={loading} type="button" onClick={onTranslateDishCreate}>{'Перевести RU в KK/EN'}</button>
+                  <input value={itemForm.nameI18n.kk} onChange={(e) => setItemForm((s) => ({ ...s, nameI18n: { ...s.nameI18n, kk: e.target.value } }))} placeholder="Dish name (KK)" />
+                  <input value={itemForm.nameI18n.en} onChange={(e) => setItemForm((s) => ({ ...s, nameI18n: { ...s.nameI18n, en: e.target.value } }))} placeholder="Dish name (EN)" />
+                  <textarea value={itemForm.descriptionI18n.kk} onChange={(e) => setItemForm((s) => ({ ...s, descriptionI18n: { ...s.descriptionI18n, kk: e.target.value } }))} placeholder="Description (KK)" rows={3} />
+                  <textarea value={itemForm.descriptionI18n.en} onChange={(e) => setItemForm((s) => ({ ...s, descriptionI18n: { ...s.descriptionI18n, en: e.target.value } }))} placeholder="Description (EN)" rows={3} />
+                  <textarea value={itemForm.recipeI18n.kk} onChange={(e) => setItemForm((s) => ({ ...s, recipeI18n: { ...s.recipeI18n, kk: e.target.value } }))} placeholder={'Recipe ingredients (KK), one per line'} rows={4} />
+                  <textarea value={itemForm.recipeI18n.en} onChange={(e) => setItemForm((s) => ({ ...s, recipeI18n: { ...s.recipeI18n, en: e.target.value } }))} placeholder={'Recipe ingredients (EN), one per line'} rows={4} />
+                </>
+              )}
+              {createDishStep === 4 && (
+                <>
+                  <input type="file" accept="image/*" onChange={onPickCreateImage} />
+                  {itemForm.image && <img className="image-preview" src={itemForm.image} alt="Dish preview" />}
+                  <p className="wizard-note">Можно сохранить без фото и добавить его позже.</p>
+                </>
+              )}
+              <div className="wizard-footer">
+                <button type="button" className="close-btn" onClick={closeCreateItem}>Закрыть</button>
+                <button disabled={loading || createDishStep === 1} type="button" onClick={() => setCreateDishStep((step) => Math.max(1, step - 1))}>Назад</button>
+                {createDishStep < 4 ? (
+                  <button disabled={loading || (createDishStep === 1 && !canContinueFromStepOne(itemForm))} type="button" onClick={() => setCreateDishStep((step) => Math.min(4, step + 1))}>Далее</button>
+                ) : (
+                  <button disabled={loading} type="submit">Создать</button>
+                )}
+              </div>
             </form>
-            <button className="close-btn" type="button" onClick={() => setCreatingDish(false)}>Close</button>
           </div>
         </div>
       )}
@@ -1008,11 +1458,11 @@ function App() {
       {deleteCandidate && (
         <div className="modal-backdrop" onClick={() => setDeleteCandidate(null)}>
           <div className="modal modal-compact" onClick={(event) => event.stopPropagation()}>
-            <h3>Delete Dish</h3>
-            <p>Delete "{deleteCandidate.name}"?</p>
+            <h3>Удалить блюдо</h3>
+            <p>Удалить "{deleteCandidate.name}"?</p>
             <div className="actions">
-              <button disabled={loading} type="button" onClick={onConfirmDeleteItem}>Delete</button>
-              <button className="close-btn" type="button" onClick={() => setDeleteCandidate(null)}>Cancel</button>
+              <button disabled={loading} type="button" onClick={onConfirmDeleteItem}>Удалить</button>
+              <button className="close-btn" type="button" onClick={() => setDeleteCandidate(null)}>Отмена</button>
             </div>
           </div>
         </div>
@@ -1025,7 +1475,7 @@ function App() {
     localStorage.removeItem('adminPrincipal')
     setPrincipal(null)
     setTab('restaurants')
-    toast('idle', 'Signed out')
+    toast('idle', 'Вы вышли из аккаунта.')
   }
 
   return (
@@ -1042,11 +1492,11 @@ function App() {
         <nav className="nav-list">
           {availableTabs.map((key) => (
             <button key={key} className={tab === key ? 'active' : ''} type="button" onClick={() => setTab(key)}>
-              {key === 'restaurants' && 'Restaurants'}
-              {key === 'restaurant' && 'Restaurant Info'}
-              {key === 'staff' && 'Staff'}
-              {key === 'categories' && 'Categories'}
-              {key === 'items' && 'Dishes'}
+              {key === 'restaurants' && 'Рестораны'}
+              {key === 'restaurant' && 'Инфо ресторана'}
+              {key === 'staff' && 'Персонал'}
+              {key === 'categories' && 'Категории'}
+              {key === 'items' && 'Блюда'}
             </button>
           ))}
         </nav>
