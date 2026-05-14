@@ -109,13 +109,18 @@ def revoke_staff_member(actor: AdminPrincipal, membership_id: str) -> StaffMembe
     membership = StaffMembership.query.filter_by(id=UUID(membership_id)).first()
     if membership is None:
         raise StaffPermissionError("Membership not found.", 404)
-    if actor.role != StaffRole.super_admin.value and str(membership.restaurant_id) != actor.restaurant_id:
+
+    if actor.role == StaffRole.super_admin.value:
+        if membership.telegram_user_id == actor.telegram_user_id:
+            raise StaffPermissionError("Self-revoke is not allowed for super admin.", 403)
+        membership.status = MembershipStatus.revoked
+        return membership
+
+    if str(membership.restaurant_id) != actor.restaurant_id:
         raise StaffPermissionError("Cannot revoke out-of-scope membership.", 403)
-    if membership.role == StaffRole.super_admin and actor.role != StaffRole.super_admin.value:
-        raise StaffPermissionError("Cannot revoke super admin membership.", 403)
-    if actor.role == StaffRole.super_admin.value and membership.telegram_user_id == actor.telegram_user_id:
-        raise StaffPermissionError("Self-revoke is not allowed for super admin.", 403)
-    assert_role_change_allowed(actor, membership.role)
+    if membership.role != StaffRole.manager:
+        raise StaffPermissionError("Admin can revoke only manager role.", 403)
+
     membership.status = MembershipStatus.revoked
     return membership
 
