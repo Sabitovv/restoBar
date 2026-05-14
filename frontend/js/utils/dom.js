@@ -9,19 +9,37 @@
  * @param {*} templateSetup Lambda for custom template filling, e.g. setting CSS, text, etc.
  */
 export function replaceShimmerContent(containerSelector, templateSelector, loadableImageSelector, data, templateSetup) {
+    if (!Array.isArray(data) || data.length === 0) {
+        fillContainer(containerSelector, []);
+        return;
+    }
+
     let templateHtml = $(templateSelector).html();
-    var imageLoaded = 0;
-    let imageShouldBeLoaded = data.length;
+    let imageLoaded = 0;
+    const imageShouldBeLoaded = data.length;
     let filledTemplates = [];
+
+    const markReady = () => {
+        imageLoaded++;
+        if (imageLoaded >= imageShouldBeLoaded) {
+            fillContainer(containerSelector, filledTemplates);
+        }
+    };
+
     data.forEach(dataItem => {
         let filledTemplate = $(templateHtml);
         templateSetup(filledTemplate, dataItem);
-        filledTemplate.find(loadableImageSelector).on('load', () => {
-            imageLoaded++;
-            if (imageLoaded == imageShouldBeLoaded) {
-                fillContainer(containerSelector, filledTemplates);
-            }
-        });
+
+        const imageElement = filledTemplate.find(loadableImageSelector);
+        const src = imageElement.attr('src');
+
+        imageElement.on('load', markReady);
+        imageElement.on('error', markReady);
+
+        if (!src) {
+            markReady();
+        }
+
         filledTemplates.push(filledTemplate);
     });
 }

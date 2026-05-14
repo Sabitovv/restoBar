@@ -72,7 +72,7 @@ export class MainPage extends Route {
             (template, cafeCategory) => {
                 template.attr('id', cafeCategory.id);
                 template.css('background-color', cafeCategory.backgroundColor);
-                template.find('#cafe-category-icon').attr('src', cafeCategory.icon);
+                template.find('#cafe-category-icon').attr('src', cafeCategory.icon || 'icons/icon-transparent.svg');
                 template.find('#cafe-category-name').text(cafeCategory.name);
                 template.on('click', () => {
                     const params = JSON.stringify({'id': cafeCategory.id});
