@@ -19,6 +19,14 @@ function App() {
   const [staffItems, setStaffItems] = useState([])
   const [categories, setCategories] = useState([])
   const [menuItems, setMenuItems] = useState([])
+  const [restaurantProfile, setRestaurantProfile] = useState({
+    name: '',
+    about: '',
+    previewImage: '',
+    workingHours: {
+      mon: '', tue: '', wed: '', thu: '', fri: '', sat: '', sun: '',
+    },
+  })
 
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('')
   const [selectedCategoryId, setSelectedCategoryId] = useState('')
@@ -28,7 +36,7 @@ function App() {
 
   const [restaurantForm, setRestaurantForm] = useState({ name: '', slug: '' })
   const [inviteForm, setInviteForm] = useState({ username: '', role: 'admin', restaurantId: '' })
-  const [categoryForm, setCategoryForm] = useState({ name: '', icon: '', backgroundColor: '', isActive: true })
+  const [categoryForm, setCategoryForm] = useState({ name: '', image: '', isActive: true })
   const [itemForm, setItemForm] = useState({
     name: '',
     categoryId: '',
@@ -37,12 +45,11 @@ function App() {
     description: '',
     recipeText: '',
     image: '',
-    variantWeight: '',
     isAvailableNow: true,
-    isPopular: false,
   })
   const [editingItem, setEditingItem] = useState(null)
   const [editingCategory, setEditingCategory] = useState(null)
+  const [draggingCategoryId, setDraggingCategoryId] = useState('')
   const [creatingCategory, setCreatingCategory] = useState(false)
   const [creatingDish, setCreatingDish] = useState(false)
   const [editItemForm, setEditItemForm] = useState({
@@ -54,14 +61,10 @@ function App() {
     description: '',
     recipeText: '',
     image: '',
-    variantWeight: '',
     isAvailableNow: true,
-    isPopular: false,
   })
   const [deleteCandidate, setDeleteCandidate] = useState(null)
-  const [editCategoryForm, setEditCategoryForm] = useState({ id: '', name: '', icon: '', backgroundColor: '', isActive: true })
-  const [clientThemeJson, setClientThemeJson] = useState('')
-  const [cafeInfoJson, setCafeInfoJson] = useState('')
+  const [editCategoryForm, setEditCategoryForm] = useState({ id: '', name: '', image: '', isActive: true })
 
   const isSuper = principal?.role === 'super_admin'
   const isAdmin = principal?.role === 'admin'
@@ -69,8 +72,8 @@ function App() {
 
   const availableTabs = useMemo(() => {
     if (isSuper) return ['restaurants', 'staff']
-    if (isAdmin) return ['categories', 'items', 'client', 'staff']
-    if (isManager) return ['categories', 'items', 'client']
+    if (isAdmin) return ['restaurant', 'categories', 'items', 'staff']
+    if (isManager) return ['restaurant', 'categories', 'items']
     return []
   }, [isSuper, isAdmin, isManager])
 
@@ -260,21 +263,30 @@ function App() {
     }
   }
 
+  const loadRestaurantProfile = async () => {
+    if (!principal || isSuper) return
+    const data = await api('/admin/restaurant/profile')
+    setRestaurantProfile({
+      name: data.name || '',
+      about: data.about || '',
+      previewImage: data.previewImage || '',
+      workingHours: {
+        mon: data.workingHours?.mon || '',
+        tue: data.workingHours?.tue || '',
+        wed: data.workingHours?.wed || '',
+        thu: data.workingHours?.thu || '',
+        fri: data.workingHours?.fri || '',
+        sat: data.workingHours?.sat || '',
+        sun: data.workingHours?.sun || '',
+      },
+    })
+  }
+
   const loadMenuItems = async () => {
     if (!principal || isSuper) return setMenuItems([])
     const query = selectedCategoryId ? `?categoryId=${selectedCategoryId}` : ''
     const data = await api(`/admin/menu/items${query}`)
     setMenuItems(data.items || [])
-  }
-
-  const loadClientExperience = async () => {
-    if (!principal || isSuper) return
-    const [theme, cafeInfo] = await Promise.all([
-      api('/admin/client/theme'),
-      api('/admin/cafe-info'),
-    ])
-    setClientThemeJson(JSON.stringify(theme || {}, null, 2))
-    setCafeInfoJson(JSON.stringify(cafeInfo || {}, null, 2))
   }
 
   useEffect(() => {
@@ -283,13 +295,11 @@ function App() {
       setLoading(true)
       try {
         if (tab === 'staff') await loadStaff()
+        if (tab === 'restaurant') await loadRestaurantProfile()
         if (tab === 'categories') await loadCategories()
         if (tab === 'items') {
           await loadCategories()
           await loadMenuItems()
-        }
-        if (tab === 'client') {
-          await loadClientExperience()
         }
       } catch (error) {
         toast('error', error.message)
@@ -370,7 +380,7 @@ function App() {
     setLoading(true)
     try {
       await api('/admin/menu/categories', { method: 'POST', body: JSON.stringify(categoryForm) })
-      setCategoryForm({ name: '', icon: '', backgroundColor: '', isActive: true })
+      setCategoryForm({ name: '', image: '', isActive: true })
       toast('success', 'Category created.')
       setCreatingCategory(false)
       await loadCategories()
@@ -386,8 +396,7 @@ function App() {
     setEditCategoryForm({
       id: category.id,
       name: category.name || '',
-      icon: category.icon || '',
-      backgroundColor: category.backgroundColor || '',
+      image: category.image || '',
       isActive: Boolean(category.isActive),
     })
   }
@@ -403,12 +412,7 @@ function App() {
       if (!editCategoryForm.name.trim()) throw new Error('Category name is required.')
       await api(`/admin/menu/categories/${editCategoryForm.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({
-          name: editCategoryForm.name,
-          icon: editCategoryForm.icon,
-          backgroundColor: editCategoryForm.backgroundColor,
-          isActive: editCategoryForm.isActive,
-        }),
+        body: JSON.stringify({ name: editCategoryForm.name, image: editCategoryForm.image, isActive: editCategoryForm.isActive }),
       })
       toast('success', 'Category updated.')
       closeEditCategory()
@@ -416,6 +420,68 @@ function App() {
       await loadMenuItems()
     } catch (error) {
       toast('error', error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const onPickCreateCategoryImage = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (file.size > MAX_IMAGE_FILE_BYTES) {
+      toast('error', 'Image is too large. Max size is 3 MB.')
+      event.target.value = ''
+      return
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file)
+      const compressed = await compressImageDataUrl(dataUrl)
+      setCategoryForm((state) => ({ ...state, image: compressed }))
+      toast('success', 'Category image selected and compressed.')
+    } catch (error) {
+      toast('error', error.message)
+    }
+  }
+
+  const onPickEditCategoryImage = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (file.size > MAX_IMAGE_FILE_BYTES) {
+      toast('error', 'Image is too large. Max size is 3 MB.')
+      event.target.value = ''
+      return
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file)
+      const compressed = await compressImageDataUrl(dataUrl)
+      setEditCategoryForm((state) => ({ ...state, image: compressed }))
+      toast('success', 'Category image selected and compressed.')
+    } catch (error) {
+      toast('error', error.message)
+    }
+  }
+
+  const onReorderCategories = async (fromId, toId) => {
+    if (!fromId || !toId || fromId === toId) return
+    const fromIndex = categories.findIndex((item) => item.id === fromId)
+    const toIndex = categories.findIndex((item) => item.id === toId)
+    if (fromIndex < 0 || toIndex < 0) return
+
+    const next = [...categories]
+    const [moved] = next.splice(fromIndex, 1)
+    next.splice(toIndex, 0, moved)
+    setCategories(next)
+
+    setLoading(true)
+    try {
+      await api('/admin/menu/categories/reorder', {
+        method: 'PATCH',
+        body: JSON.stringify({ ids: next.map((item) => item.id) }),
+      })
+      toast('success', 'Categories order saved.')
+    } catch (error) {
+      toast('error', error.message)
+      await loadCategories()
     } finally {
       setLoading(false)
     }
@@ -440,21 +506,10 @@ function App() {
           discountMinor: priceData.discountMinor,
           discountIsActive: priceData.discountIsActive,
           isAvailableNow: itemForm.isAvailableNow,
-          isPopular: itemForm.isPopular,
-          variants: [{ name: 'default', priceMinor: priceData.priceMinor, weight: itemForm.variantWeight, currency: 'USD' }],
+          variants: [{ name: 'default', priceMinor: priceData.priceMinor, currency: 'USD' }],
         }),
       })
-      setItemForm((state) => ({
-        ...state,
-        name: '',
-        description: '',
-        recipeText: '',
-        image: '',
-        variantWeight: '',
-        oldPriceMinor: '',
-        newPriceMinor: '500',
-        isPopular: false,
-      }))
+      setItemForm((state) => ({ ...state, name: '', description: '', recipeText: '', image: '', oldPriceMinor: '', newPriceMinor: '500' }))
       toast('success', 'Dish created.')
       setCreatingDish(false)
       await loadMenuItems()
@@ -532,11 +587,9 @@ function App() {
           discountMinor: Number(item.discountMinor || 0),
           discountIsActive: Boolean(item.discountIsActive),
           isAvailableNow: Boolean(item.isAvailableNow),
-          isPopular: Boolean(item.isPopular),
           variants: [{
             name: item.variants?.[0]?.name || 'default',
             priceMinor: Number(item.variants?.[0]?.priceMinor || 0),
-            weight: item.variants?.[0]?.weight || '',
             currency: item.variants?.[0]?.currency || 'USD',
           }],
         }),
@@ -564,9 +617,7 @@ function App() {
       description: item.description || '',
       recipeText: Array.isArray(item.recipe) ? item.recipe.join('\n') : (item.recipe || ''),
       image: item.image || '',
-      variantWeight: item.variants?.[0]?.weight || '',
       isAvailableNow: Boolean(item.isAvailableNow),
-      isPopular: Boolean(item.isPopular),
     })
   }
 
@@ -593,8 +644,7 @@ function App() {
           recipe: parseRecipe(editItemForm.recipeText),
           image: editItemForm.image,
           isAvailableNow: editItemForm.isAvailableNow,
-          isPopular: editItemForm.isPopular,
-          variants: [{ name: 'default', priceMinor: priceData.priceMinor, weight: editItemForm.variantWeight, currency: 'USD' }],
+          variants: [{ name: 'default', priceMinor: priceData.priceMinor, currency: 'USD' }],
         }),
       })
       toast('success', 'Dish updated.')
@@ -625,15 +675,34 @@ function App() {
     }
   }
 
-  const onSaveClientExperience = async (event) => {
+  const onPickRestaurantPreview = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (file.size > MAX_IMAGE_FILE_BYTES) {
+      toast('error', 'Image is too large. Max size is 3 MB.')
+      event.target.value = ''
+      return
+    }
+    try {
+      const dataUrl = await fileToDataUrl(file)
+      const compressed = await compressImageDataUrl(dataUrl)
+      setRestaurantProfile((state) => ({ ...state, previewImage: compressed }))
+      toast('success', 'Preview image selected and compressed.')
+    } catch (error) {
+      toast('error', error.message)
+    }
+  }
+
+  const onSaveRestaurantProfile = async (event) => {
     event.preventDefault()
     setLoading(true)
     try {
-      const parsedTheme = JSON.parse(clientThemeJson || '{}')
-      const parsedCafeInfo = JSON.parse(cafeInfoJson || '{}')
-      await api('/admin/client/theme', { method: 'PATCH', body: JSON.stringify(parsedTheme) })
-      await api('/admin/cafe-info', { method: 'PATCH', body: JSON.stringify(parsedCafeInfo) })
-      toast('success', 'Client experience updated.')
+      await api('/admin/restaurant/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(restaurantProfile),
+      })
+      toast('success', 'Restaurant profile updated.')
+      await loadRestaurantProfile()
     } catch (error) {
       toast('error', error.message)
     } finally {
@@ -707,18 +776,35 @@ function App() {
         <h2>Categories</h2>
         <button disabled={loading} type="button" onClick={() => setCreatingCategory(true)}>Add category</button>
       </div>
-      <div className="invite">
-        <input value={categorySearch} onChange={(e) => setCategorySearch(e.target.value)} placeholder="Search categories" />
-        <span />
-        <span />
+      <div className="category-toolbar">
+        <input
+          value={categorySearch}
+          onChange={(e) => setCategorySearch(e.target.value)}
+          placeholder="Search categories"
+        />
+        <span className="category-count">{filteredCategories.length} found</span>
       </div>
-      <div className="staff-list">
-        {filteredCategories.length === 0 && <article><strong>Empty</strong><span>No categories found.</span></article>}
+      <div className="category-grid">
+        {filteredCategories.length === 0 && <article className="category-card"><strong>Empty</strong><span>No categories found.</span></article>}
         {filteredCategories.map((item) => (
-          <article key={item.id}>
-            <strong>{item.name}</strong>
-            <span>{item.isActive ? 'active' : 'inactive'}</span>
-            <span>{item.itemsCount} dishes</span>
+          <article
+            className={`category-card ${draggingCategoryId === item.id ? 'dragging' : ''}`}
+            key={item.id}
+            draggable
+            onDragStart={() => setDraggingCategoryId(item.id)}
+            onDragEnd={() => setDraggingCategoryId('')}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => {
+              onReorderCategories(draggingCategoryId, item.id)
+              setDraggingCategoryId('')
+            }}
+          >
+            {item.image && <img className="category-thumb" src={item.image} alt={`${item.name} category`} />}
+            <div className="category-card-head">
+              <strong>{item.name}</strong>
+              <span className={`status-pill ${item.isActive ? 'on' : 'off'}`}>{item.isActive ? 'active' : 'inactive'}</span>
+            </div>
+            <span className="category-meta">{item.itemsCount} dishes</span>
             <div className="actions">
               <button disabled={loading} type="button" onClick={() => openEditCategory(item)}>Edit</button>
             </div>
@@ -732,8 +818,9 @@ function App() {
             <h3>Edit Category</h3>
             <form className="invite" onSubmit={onSaveEditCategory}>
               <input value={editCategoryForm.name} onChange={(e) => setEditCategoryForm((s) => ({ ...s, name: e.target.value }))} placeholder="Category name" required />
-              <input value={editCategoryForm.icon} onChange={(e) => setEditCategoryForm((s) => ({ ...s, icon: e.target.value }))} placeholder="Icon URL" />
-              <input value={editCategoryForm.backgroundColor} onChange={(e) => setEditCategoryForm((s) => ({ ...s, backgroundColor: e.target.value }))} placeholder="Background #hex" />
+              <input value={editCategoryForm.image} onChange={(e) => setEditCategoryForm((s) => ({ ...s, image: e.target.value }))} placeholder="Category image URL" />
+              <input type="file" accept="image/*" onChange={onPickEditCategoryImage} />
+              {editCategoryForm.image && <img className="image-preview" src={editCategoryForm.image} alt="Category preview" />}
               <select value={String(editCategoryForm.isActive)} onChange={(e) => setEditCategoryForm((s) => ({ ...s, isActive: e.target.value === 'true' }))}>
                 <option value="true">active</option>
                 <option value="false">inactive</option>
@@ -751,8 +838,9 @@ function App() {
             <h3>Add Category</h3>
             <form className="invite" onSubmit={onCreateCategory}>
               <input value={categoryForm.name} onChange={(e) => setCategoryForm((s) => ({ ...s, name: e.target.value }))} placeholder="Category name" required />
-              <input value={categoryForm.icon} onChange={(e) => setCategoryForm((s) => ({ ...s, icon: e.target.value }))} placeholder="Icon URL" />
-              <input value={categoryForm.backgroundColor} onChange={(e) => setCategoryForm((s) => ({ ...s, backgroundColor: e.target.value }))} placeholder="Background #hex" />
+              <input value={categoryForm.image} onChange={(e) => setCategoryForm((s) => ({ ...s, image: e.target.value }))} placeholder="Category image URL" />
+              <input type="file" accept="image/*" onChange={onPickCreateCategoryImage} />
+              {categoryForm.image && <img className="image-preview" src={categoryForm.image} alt="Category preview" />}
               <select value={String(categoryForm.isActive)} onChange={(e) => setCategoryForm((s) => ({ ...s, isActive: e.target.value === 'true' }))}>
                 <option value="true">active</option>
                 <option value="false">inactive</option>
@@ -763,6 +851,27 @@ function App() {
           </div>
         </div>
       )}
+    </section>
+  )
+
+  const renderRestaurantProfile = () => (
+    <section className="panel">
+      <div className="section-head"><h2>Restaurant Info</h2></div>
+      <form className="invite" onSubmit={onSaveRestaurantProfile}>
+        <input value={restaurantProfile.name} onChange={(e) => setRestaurantProfile((s) => ({ ...s, name: e.target.value }))} placeholder="Restaurant name" required />
+        <input value={restaurantProfile.previewImage} onChange={(e) => setRestaurantProfile((s) => ({ ...s, previewImage: e.target.value }))} placeholder="Preview image URL" />
+        <input type="file" accept="image/*" onChange={onPickRestaurantPreview} />
+        {restaurantProfile.previewImage && <img className="image-preview" src={restaurantProfile.previewImage} alt="Restaurant preview" />}
+        <textarea value={restaurantProfile.about} onChange={(e) => setRestaurantProfile((s) => ({ ...s, about: e.target.value }))} placeholder="About restaurant" rows={3} />
+        <input value={restaurantProfile.workingHours.mon} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, mon: e.target.value } }))} placeholder="Mon 09:00-22:00" />
+        <input value={restaurantProfile.workingHours.tue} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, tue: e.target.value } }))} placeholder="Tue 09:00-22:00" />
+        <input value={restaurantProfile.workingHours.wed} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, wed: e.target.value } }))} placeholder="Wed 09:00-22:00" />
+        <input value={restaurantProfile.workingHours.thu} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, thu: e.target.value } }))} placeholder="Thu 09:00-22:00" />
+        <input value={restaurantProfile.workingHours.fri} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, fri: e.target.value } }))} placeholder="Fri 09:00-22:00" />
+        <input value={restaurantProfile.workingHours.sat} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, sat: e.target.value } }))} placeholder="Sat 09:00-22:00" />
+        <input value={restaurantProfile.workingHours.sun} onChange={(e) => setRestaurantProfile((s) => ({ ...s, workingHours: { ...s.workingHours, sun: e.target.value } }))} placeholder="Sun 09:00-22:00" />
+        <button disabled={loading} type="submit">Save</button>
+      </form>
     </section>
   )
 
@@ -857,7 +966,6 @@ function App() {
               <input value={editItemForm.oldPriceMinor} onChange={(e) => setEditItemForm((s) => ({ ...s, oldPriceMinor: e.target.value }))} placeholder="Old price" />
               <input value={editItemForm.newPriceMinor} onChange={(e) => setEditItemForm((s) => ({ ...s, newPriceMinor: e.target.value }))} placeholder="New price" required />
               <input value={editItemForm.image} onChange={(e) => setEditItemForm((s) => ({ ...s, image: e.target.value }))} placeholder="Photo URL" />
-              <input value={editItemForm.variantWeight} onChange={(e) => setEditItemForm((s) => ({ ...s, variantWeight: e.target.value }))} placeholder="Weight e.g. 250ml" />
               <input type="file" accept="image/*" onChange={onPickEditImage} />
               {editItemForm.image && <img className="image-preview" src={editItemForm.image} alt="Dish preview" />}
               <input value={editItemForm.description} onChange={(e) => setEditItemForm((s) => ({ ...s, description: e.target.value }))} placeholder="Description" />
@@ -865,10 +973,6 @@ function App() {
               <select value={String(editItemForm.isAvailableNow)} onChange={(e) => setEditItemForm((s) => ({ ...s, isAvailableNow: e.target.value === 'true' }))}>
                 <option value="true">available</option>
                 <option value="false">hidden</option>
-              </select>
-              <select value={String(editItemForm.isPopular)} onChange={(e) => setEditItemForm((s) => ({ ...s, isPopular: e.target.value === 'true' }))}>
-                <option value="false">not popular</option>
-                <option value="true">popular</option>
               </select>
               <button disabled={loading} type="submit">Save</button>
             </form>
@@ -890,15 +994,10 @@ function App() {
               <input value={itemForm.oldPriceMinor} onChange={(e) => setItemForm((s) => ({ ...s, oldPriceMinor: e.target.value }))} placeholder="Old price" />
               <input value={itemForm.newPriceMinor} onChange={(e) => setItemForm((s) => ({ ...s, newPriceMinor: e.target.value }))} placeholder="New price" required />
               <input value={itemForm.image} onChange={(e) => setItemForm((s) => ({ ...s, image: e.target.value }))} placeholder="Photo URL" />
-              <input value={itemForm.variantWeight} onChange={(e) => setItemForm((s) => ({ ...s, variantWeight: e.target.value }))} placeholder="Weight e.g. 250ml" />
               <input type="file" accept="image/*" onChange={onPickCreateImage} />
               {itemForm.image && <img className="image-preview" src={itemForm.image} alt="Dish preview" />}
               <input value={itemForm.description} onChange={(e) => setItemForm((s) => ({ ...s, description: e.target.value }))} placeholder="Description" />
               <textarea value={itemForm.recipeText} onChange={(e) => setItemForm((s) => ({ ...s, recipeText: e.target.value }))} placeholder={'Recipe ingredients, one per line\nbeef\ntomato\ncucumber'} rows={4} />
-              <select value={String(itemForm.isPopular)} onChange={(e) => setItemForm((s) => ({ ...s, isPopular: e.target.value === 'true' }))}>
-                <option value="false">not popular</option>
-                <option value="true">popular</option>
-              </select>
               <button disabled={loading} type="submit">Create</button>
             </form>
             <button className="close-btn" type="button" onClick={() => setCreatingDish(false)}>Close</button>
@@ -918,27 +1017,6 @@ function App() {
           </div>
         </div>
       )}
-    </section>
-  )
-
-  const renderClientExperience = () => (
-    <section className="panel">
-      <h2>Client Experience</h2>
-      <form className="invite" onSubmit={onSaveClientExperience}>
-        <textarea
-          value={clientThemeJson}
-          onChange={(e) => setClientThemeJson(e.target.value)}
-          placeholder="Theme JSON"
-          rows={10}
-        />
-        <textarea
-          value={cafeInfoJson}
-          onChange={(e) => setCafeInfoJson(e.target.value)}
-          placeholder="Cafe info JSON"
-          rows={10}
-        />
-        <button disabled={loading} type="submit">Save client config</button>
-      </form>
     </section>
   )
 
@@ -965,10 +1043,10 @@ function App() {
           {availableTabs.map((key) => (
             <button key={key} className={tab === key ? 'active' : ''} type="button" onClick={() => setTab(key)}>
               {key === 'restaurants' && 'Restaurants'}
+              {key === 'restaurant' && 'Restaurant Info'}
               {key === 'staff' && 'Staff'}
               {key === 'categories' && 'Categories'}
               {key === 'items' && 'Dishes'}
-              {key === 'client' && 'Client'}
             </button>
           ))}
         </nav>
@@ -976,10 +1054,10 @@ function App() {
 
       <section>
         {tab === 'restaurants' && renderRestaurants()}
+        {tab === 'restaurant' && renderRestaurantProfile()}
         {tab === 'staff' && renderStaff()}
         {tab === 'categories' && renderCategories()}
         {tab === 'items' && renderItems()}
-        {tab === 'client' && renderClientExperience()}
       </section>
     </main>
   )

@@ -2,7 +2,6 @@ import json
 import os
 import time
 import uuid
-from uuid import UUID
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -27,27 +26,21 @@ from .services.admin_menu_service import (
     create_menu_item,
     list_menu_categories,
     list_menu_items,
+    reorder_menu_categories,
     soft_delete_menu_item,
     toggle_item_availability,
     update_menu_category,
     update_menu_item,
 )
-from .services.admin_restaurant_service import create_restaurant, delete_restaurant, list_restaurants
+from .services.admin_restaurant_service import (
+    create_restaurant,
+    delete_restaurant,
+    get_restaurant_profile,
+    list_restaurants,
+    update_restaurant_profile,
+)
 from .services.admin_staff_service import StaffPermissionError, change_staff_role, invite_staff_member, list_staff, revoke_staff_member
-from .services.client_experience_service import (
-    get_cafe_info_payload,
-    get_client_theme_public,
-    get_client_theme_for_restaurant,
-    set_cafe_info_payload,
-    set_client_theme,
-)
-from .services.menu_service import (
-    get_cafe_info_from_pg,
-    get_categories_from_pg,
-    get_category_menu_from_pg,
-    get_menu_item_details_from_pg,
-    get_popular_menu_from_pg,
-)
+from .services.menu_service import get_cafe_info_from_pg, get_categories_from_pg, get_category_menu_from_pg, get_menu_item_details_from_pg
 from .services.storage_service import generate_idempotency_key, mirror_order_to_json, persist_order
 
 def create_app() -> Flask:
@@ -91,8 +84,7 @@ def create_app() -> Flask:
 
 
 def register_routes(app: Flask) -> None:
-    frontend_root = Path(__file__).resolve().parents[2] / "client-web" / "dist"
-    legacy_frontend_root = Path(__file__).resolve().parents[2] / "frontend"
+    frontend_root = Path(__file__).resolve().parents[2] / "frontend"
     admin_frontend_root = Path(__file__).resolve().parents[2] / "admin-web" / "dist"
     settings = app.config["SETTINGS"]
     admin_host = urlparse(settings.admin_app_url).hostname if settings.admin_app_url else None
@@ -153,60 +145,6 @@ def register_routes(app: Flask) -> None:
             return json_data("data/categories.json")
         except FileNotFoundError:
             return {"message": "Could not find categories data."}, 404
-
-    @app.route("/menu/popular")
-    def popular_menu():
-        raw_limit = request.args.get("limit", "10")
-        try:
-            parsed_limit = int(raw_limit)
-        except (TypeError, ValueError):
-            return {"message": "limit must be an integer."}, 400
-        if parsed_limit < 1:
-            return {"message": "limit must be greater than 0."}, 400
-
-        return get_popular_menu_from_pg(limit=parsed_limit)
-
-    @app.route("/client/theme")
-    def client_theme_public():
-        restaurant_id = request.args.get("restaurantId")
-        try:
-            return get_client_theme_public(restaurant_id)
-        except ValueError:
-            return {"message": "restaurantId must be a valid UUID."}, 400
-
-    @app.route("/client/bootstrap")
-    def client_bootstrap():
-        raw_limit = request.args.get("popularLimit", "10")
-        try:
-            parsed_limit = int(raw_limit)
-        except (TypeError, ValueError):
-            return {"message": "popularLimit must be an integer."}, 400
-        if parsed_limit < 1:
-            return {"message": "popularLimit must be greater than 0."}, 400
-
-        settings = app.config["SETTINGS"]
-        info_payload = None
-        categories_payload = []
-        if settings.read_menu_from_pg:
-            info_payload = get_cafe_info_from_pg()
-            categories_payload = get_categories_from_pg()
-        if info_payload is None:
-            try:
-                info_payload = json_data("data/info.json")
-            except FileNotFoundError:
-                info_payload = None
-        if not categories_payload:
-            try:
-                categories_payload = json_data("data/categories.json")
-            except FileNotFoundError:
-                categories_payload = []
-
-        return {
-            "info": info_payload,
-            "categories": categories_payload,
-            "popular": get_popular_menu_from_pg(limit=parsed_limit),
-            "theme": get_client_theme_public(request.args.get("restaurantId")),
-        }
 
     @app.route("/menu/<category_id>")
     def category_menu(category_id: str):
@@ -437,6 +375,30 @@ def register_routes(app: Flask) -> None:
             return {"message": "Unauthorized."}, 401
         return {"items": list_restaurants(principal)}
 
+    @app.route("/admin/restaurant/profile", methods=["GET"])
+    def admin_restaurant_profile_get():
+        principal = get_admin_principal()
+        if principal is None:
+            return {"message": "Unauthorized."}, 401
+        try:
+            return get_restaurant_profile(principal)
+        except StaffPermissionError as exc:
+            return {"message": exc.message}, exc.status_code
+
+    @app.route("/admin/restaurant/profile", methods=["PATCH"])
+    def admin_restaurant_profile_patch():
+        principal = get_admin_principal()
+        if principal is None:
+            return {"message": "Unauthorized."}, 401
+        payload = request.get_json() or {}
+        try:
+            data = update_restaurant_profile(principal, payload)
+            db.session.commit()
+            return data
+        except StaffPermissionError as exc:
+            db.session.rollback()
+            return {"message": exc.message}, exc.status_code
+
     @app.route("/admin/restaurants", methods=["POST"])
     def admin_restaurants_create():
         principal = get_admin_principal()
@@ -497,13 +459,7 @@ def register_routes(app: Flask) -> None:
         except StaffPermissionError as exc:
             db.session.rollback()
             return {"message": exc.message}, exc.status_code
-        return {
-            "id": category.id,
-            "name": category.name,
-            "icon": category.icon,
-            "backgroundColor": category.background_color,
-            "isActive": category.is_active,
-        }, 201
+        return {"id": category.id, "name": category.name, "image": category.image, "isActive": category.is_active}, 201
 
     @app.route("/admin/menu/categories/<category_id>", methods=["PATCH"])
     def admin_menu_categories_update(category_id: str):
@@ -517,13 +473,21 @@ def register_routes(app: Flask) -> None:
         except StaffPermissionError as exc:
             db.session.rollback()
             return {"message": exc.message}, exc.status_code
-        return {
-            "id": category.id,
-            "name": category.name,
-            "icon": category.icon,
-            "backgroundColor": category.background_color,
-            "isActive": category.is_active,
-        }
+        return {"id": category.id, "name": category.name, "image": category.image, "isActive": category.is_active}
+
+    @app.route("/admin/menu/categories/reorder", methods=["PATCH"])
+    def admin_menu_categories_reorder():
+        principal = get_admin_principal()
+        if principal is None:
+            return {"message": "Unauthorized."}, 401
+        payload = request.get_json() or {}
+        try:
+            items = reorder_menu_categories(principal, payload)
+            db.session.commit()
+        except StaffPermissionError as exc:
+            db.session.rollback()
+            return {"message": exc.message}, exc.status_code
+        return {"items": items}
 
     @app.route("/admin/menu/items", methods=["GET"])
     def admin_menu_items_list():
@@ -553,7 +517,6 @@ def register_routes(app: Flask) -> None:
             "name": item.name,
             "categoryId": item.category_id,
             "isAvailableNow": item.is_available_now,
-            "isPopular": item.is_popular,
         }, 201
 
     @app.route("/admin/menu/items/<menu_item_id>", methods=["PATCH"])
@@ -575,51 +538,7 @@ def register_routes(app: Flask) -> None:
             "discountMinor": item.discount_minor,
             "discountIsActive": item.discount_is_active,
             "isAvailableNow": item.is_available_now,
-            "isPopular": item.is_popular,
         }
-
-    @app.route("/admin/client/theme", methods=["GET"])
-    def admin_client_theme_get():
-        principal = get_admin_principal()
-        if principal is None:
-            return {"message": "Unauthorized."}, 401
-        return get_client_theme_for_restaurant(UUID(principal.restaurant_id))
-
-    @app.route("/admin/client/theme", methods=["PATCH"])
-    def admin_client_theme_patch():
-        principal = get_admin_principal()
-        if principal is None:
-            return {"message": "Unauthorized."}, 401
-        payload = request.get_json() or {}
-        try:
-            config = set_client_theme(principal, payload)
-            db.session.commit()
-        except StaffPermissionError as exc:
-            db.session.rollback()
-            return {"message": exc.message}, exc.status_code
-        return config
-
-    @app.route("/admin/cafe-info", methods=["GET"])
-    def admin_cafe_info_get():
-        principal = get_admin_principal()
-        if principal is None:
-            return {"message": "Unauthorized."}, 401
-        payload = get_cafe_info_payload()
-        return payload or {}
-
-    @app.route("/admin/cafe-info", methods=["PATCH"])
-    def admin_cafe_info_patch():
-        principal = get_admin_principal()
-        if principal is None:
-            return {"message": "Unauthorized."}, 401
-        payload = request.get_json() or {}
-        try:
-            result = set_cafe_info_payload(principal, payload)
-            db.session.commit()
-        except StaffPermissionError as exc:
-            db.session.rollback()
-            return {"message": exc.message}, exc.status_code
-        return result
 
     @app.route("/admin/menu/items/<menu_item_id>", methods=["DELETE"])
     def admin_menu_items_delete(menu_item_id: str):
@@ -656,10 +575,6 @@ def register_routes(app: Flask) -> None:
             if not admin_frontend_root.exists():
                 return {"message": "Admin frontend build is missing. Run: cd admin-web && npm run build"}, 404
             return send_from_directory(admin_frontend_root, "index.html")
-        if not frontend_root.exists() and legacy_frontend_root.exists():
-            return send_from_directory(legacy_frontend_root, "index.html")
-        if not frontend_root.exists():
-            return {"message": "Client frontend build is missing. Run: cd client-web && npm run build"}, 404
         return send_from_directory(frontend_root, "index.html")
 
     @app.route("/admin")
@@ -686,17 +601,9 @@ def register_routes(app: Flask) -> None:
                 return send_from_directory(admin_frontend_root, asset_path)
             return send_from_directory(admin_frontend_root, "index.html")
 
-        if not frontend_root.exists() and legacy_frontend_root.exists():
-            asset_file = legacy_frontend_root / asset_path
-            if asset_file.is_file():
-                return send_from_directory(legacy_frontend_root, asset_path)
-            return {"message": "Not found"}, 404
-
         asset_file = frontend_root / asset_path
         if asset_file.is_file():
             return send_from_directory(frontend_root, asset_path)
-        if frontend_root.exists():
-            return send_from_directory(frontend_root, "index.html")
         return {"message": "Not found"}, 404
 
 

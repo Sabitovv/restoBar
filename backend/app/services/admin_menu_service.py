@@ -38,13 +38,6 @@ def _normalize_image(payload_image: object) -> str | None:
     return image
 
 
-def _normalize_weight(value: object) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
 def resolve_restaurant_scope(actor: AdminPrincipal, restaurant_id: str | None) -> UUID:
     _assert_menu_permissions(actor)
     if restaurant_id and restaurant_id != actor.restaurant_id:
@@ -62,15 +55,15 @@ def list_menu_categories(actor: AdminPrincipal, restaurant_id: str | None) -> li
     )
     categories = (
         MenuCategory.query.filter_by(restaurant_id=scope_id)
-        .order_by(MenuCategory.created_at.asc())
+        .order_by(MenuCategory.sort_order.asc(), MenuCategory.created_at.asc())
         .all()
     )
     return [
         {
             "id": c.id,
             "name": c.name,
-            "icon": c.icon,
-            "backgroundColor": c.background_color,
+            "image": c.image,
+            "sortOrder": c.sort_order,
             "isActive": c.is_active,
             "itemsCount": int(counts.get(c.id, 0)),
         }
@@ -83,12 +76,17 @@ def create_menu_category(actor: AdminPrincipal, payload: dict) -> MenuCategory:
     name = (payload.get("name") or "").strip()
     if not name:
         raise StaffPermissionError("name is required.", 400)
+    max_order = (
+        db.session.query(func.max(MenuCategory.sort_order))
+        .filter_by(restaurant_id=scope_id)
+        .scalar()
+    )
     category = MenuCategory(
         id=(payload.get("id") or f"cat-{uuid.uuid4().hex[:8]}"),
         restaurant_id=scope_id,
         name=name,
-        icon=(payload.get("icon") or None),
-        background_color=(payload.get("backgroundColor") or None),
+        image=_normalize_image(payload.get("image")),
+        sort_order=int(max_order or 0) + 1,
         is_active=bool(payload.get("isActive", True)),
     )
     db.session.add(category)
@@ -108,11 +106,36 @@ def update_menu_category(actor: AdminPrincipal, category_id: str, payload: dict)
         category.name = name
     if "isActive" in payload:
         category.is_active = bool(payload.get("isActive"))
-    if "icon" in payload:
-        category.icon = (payload.get("icon") or None)
-    if "backgroundColor" in payload:
-        category.background_color = (payload.get("backgroundColor") or None)
+    if "image" in payload:
+        category.image = _normalize_image(payload.get("image"))
     return category
+
+
+def reorder_menu_categories(actor: AdminPrincipal, payload: dict) -> list[dict]:
+    scope_id = resolve_restaurant_scope(actor, payload.get("restaurantId"))
+    ids = payload.get("ids")
+    if not isinstance(ids, list) or not ids:
+        raise StaffPermissionError("ids list is required.", 400)
+
+    categories = MenuCategory.query.filter_by(restaurant_id=scope_id).all()
+    by_id = {category.id: category for category in categories}
+    if set(ids) != set(by_id.keys()):
+        raise StaffPermissionError("ids must contain all category ids for this restaurant.", 400)
+
+    for index, category_id in enumerate(ids, start=1):
+        by_id[category_id].sort_order = index
+
+    ordered = sorted(by_id.values(), key=lambda item: item.sort_order)
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "image": c.image,
+            "sortOrder": c.sort_order,
+            "isActive": c.is_active,
+        }
+        for c in ordered
+    ]
 
 
 def list_menu_items(actor: AdminPrincipal, restaurant_id: str | None, category_id: str | None) -> list[dict]:
@@ -142,13 +165,11 @@ def list_menu_items(actor: AdminPrincipal, restaurant_id: str | None, category_i
             "discountIsActive": item.discount_is_active,
             "isActive": item.is_active,
             "isAvailableNow": item.is_available_now,
-            "isPopular": item.is_popular,
             "variants": [
                 {
                     "id": variant.id,
                     "name": variant.name,
                     "priceMinor": variant.price_minor,
-                    "weight": variant.weight,
                     "currency": variant.currency,
                     "isActive": variant.is_active,
                 }
@@ -187,7 +208,6 @@ def create_menu_item(actor: AdminPrincipal, payload: dict) -> MenuItem:
         discount_is_active=bool(payload.get("discountIsActive", False)),
         is_active=bool(payload.get("isActive", True)),
         is_available_now=bool(payload.get("isAvailableNow", True)),
-        is_popular=bool(payload.get("isPopular", False)),
     )
     db.session.add(item)
 
@@ -201,7 +221,6 @@ def create_menu_item(actor: AdminPrincipal, payload: dict) -> MenuItem:
             menu_item_id=item.id,
             name=variant_name,
             price_minor=int(price_minor),
-            weight=_normalize_weight(variant_payload.get("weight")),
             currency=(variant_payload.get("currency") or "USD").upper(),
             is_active=bool(variant_payload.get("isActive", True)),
         )
@@ -231,8 +250,6 @@ def update_menu_item(actor: AdminPrincipal, menu_item_id: str, payload: dict) ->
         item.image = _normalize_image(payload.get("image"))
     if "isAvailableNow" in payload:
         item.is_available_now = bool(payload.get("isAvailableNow"))
-    if "isPopular" in payload:
-        item.is_popular = bool(payload.get("isPopular"))
     if "categoryId" in payload:
         category = MenuCategory.query.filter_by(id=payload.get("categoryId"), restaurant_id=item.restaurant_id).first()
         if category is None:
@@ -266,7 +283,6 @@ def update_menu_item(actor: AdminPrincipal, menu_item_id: str, payload: dict) ->
                 menu_item_id=item.id,
                 name=variant_name,
                 price_minor=int(variant_payload.get("priceMinor")),
-                weight=_normalize_weight(variant_payload.get("weight")),
                 currency=(variant_payload.get("currency") or "USD").upper(),
                 is_active=True,
             )
@@ -274,7 +290,6 @@ def update_menu_item(actor: AdminPrincipal, menu_item_id: str, payload: dict) ->
         else:
             variant.name = variant_name
             variant.price_minor = int(variant_payload.get("priceMinor"))
-            variant.weight = _normalize_weight(variant_payload.get("weight"))
             variant.currency = (variant_payload.get("currency") or variant.currency or "USD").upper()
 
     return item

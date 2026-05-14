@@ -33,6 +33,9 @@ class Restaurant(db.Model):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    about: Mapped[str | None] = mapped_column(Text)
+    preview_image: Mapped[str | None] = mapped_column(Text)
+    working_hours_json: Mapped[dict | None] = mapped_column(JSONB)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -75,8 +78,8 @@ class MenuCategory(db.Model):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     restaurant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("restaurants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    icon: Mapped[str | None] = mapped_column(Text)
-    background_color: Mapped[str | None] = mapped_column(String(32))
+    image: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int] = mapped_column(default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
     deleted_at: Mapped[datetime | None]
@@ -104,7 +107,6 @@ class MenuItem(db.Model):
     discount_is_active: Mapped[bool] = mapped_column(default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     is_available_now: Mapped[bool] = mapped_column(default=True, nullable=False)
-    is_popular: Mapped[bool] = mapped_column(default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
     deleted_at: Mapped[datetime | None]
 
@@ -117,7 +119,6 @@ class MenuItemVariant(db.Model):
     menu_item_id: Mapped[str] = mapped_column(ForeignKey("menu_items.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     price_minor: Mapped[int] = mapped_column(nullable=False)
-    weight: Mapped[str | None] = mapped_column(String(64))
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
@@ -221,11 +222,3 @@ class AIEvent(db.Model):
     severity: Mapped[str] = mapped_column(String(16), nullable=False, default="info")
     payload_json: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
-
-
-class ClientTheme(db.Model):
-    __tablename__ = "client_themes"
-
-    restaurant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("restaurants.id"), primary_key=True)
-    config_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

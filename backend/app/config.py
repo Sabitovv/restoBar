@@ -17,6 +17,10 @@ class Settings:
     ai_request_timeout_seconds: int
     ai_max_retries: int
     ai_model: str
+    ai_web_search_enabled: bool
+    tavily_api_key: str | None
+    tavily_timeout_seconds: int
+    tavily_max_results: int
     dual_write_orders: bool
     write_orders_to_json: bool
     orders_json_path: str
@@ -42,7 +46,11 @@ class Settings:
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
             ai_request_timeout_seconds=int(os.getenv("AI_REQUEST_TIMEOUT_SECONDS", "10")),
             ai_max_retries=int(os.getenv("AI_MAX_RETRIES", "2")),
-            ai_model=os.getenv("AI_MODEL", "gpt-4.1-mini"),
+            ai_model=os.getenv("AI_MODEL", "gemini-2.5-flash"),
+            ai_web_search_enabled=os.getenv("AI_WEB_SEARCH_ENABLED", "1") == "1",
+            tavily_api_key=os.getenv("TAVILY_API_KEY"),
+            tavily_timeout_seconds=int(os.getenv("TAVILY_TIMEOUT_SECONDS", "7")),
+            tavily_max_results=int(os.getenv("TAVILY_MAX_RESULTS", "3")),
             dual_write_orders=os.getenv("DUAL_WRITE_ORDERS", "1") == "1",
             write_orders_to_json=os.getenv("WRITE_ORDERS_TO_JSON", "1") == "1",
             orders_json_path=os.getenv("ORDERS_JSON_PATH", "data/orders.json"),
