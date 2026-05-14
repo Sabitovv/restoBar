@@ -1,0 +1,35 @@
+:root {
+  --bg: #f6f2e9;
+  --line: #d9cfbf;
+  --ink: #262114;
+  --muted: #645943;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  line-height: 1.45;
+  color: var(--ink);
+  background: radial-gradient(circle at top, #fffdf7 0%, #f2e8d7 70%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+h1 {
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.6rem, 2.5vw, 2.2rem);
+}
+
+h2 {
+  margin: 0 0 0.6rem;
+}
+
+code {
+  font-family: "JetBrains Mono", monospace;
+  background: #efe6d7;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+}
