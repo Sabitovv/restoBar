@@ -1,0 +1,38 @@
+[
+  {
+    "orderId": "86dc0fd8-20ef-4ced-8b05-917537e4b9e9",
+    "telegramUserId": 900389396,
+    "createdAt": "2026-05-13T22:31:18.967074Z",
+    "items": [
+      {
+        "cafeItem": {
+          "description": "From aged beef, with homemade ketchup, romaine lettuce and tomato.",
+          "id": "burger-1",
+          "image": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=center&w=1920&q=80",
+          "name": "Hamburger",
+          "variants": [
+            {
+              "cost": "1399",
+              "id": "l",
+              "name": "Large",
+              "weight": "280g"
+            },
+            {
+              "cost": "1199",
+              "id": "s",
+              "name": "Small",
+              "weight": "200g"
+            }
+          ]
+        },
+        "variant": {
+          "cost": "1399",
+          "id": "l",
+          "name": "Large",
+          "weight": "280g"
+        },
+        "quantity": 2
+      }
+    ]
+  }
+]
