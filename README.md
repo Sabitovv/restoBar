@@ -306,3 +306,4 @@ const baseUrl = 'http://<server-host-name>:<server-port>';
 
 To host the app on production, just upload content from the `frontend` folder to your hosting. Don't forget to set the `baseUrl` of your production server as well as setting production `APP_URL` environment variable on backend's server machine, when frontend is deployed.
 # restoBar
+# restoBar
