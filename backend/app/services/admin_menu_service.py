@@ -55,13 +55,15 @@ def list_menu_categories(actor: AdminPrincipal, restaurant_id: str | None) -> li
     )
     categories = (
         MenuCategory.query.filter_by(restaurant_id=scope_id)
-        .order_by(MenuCategory.created_at.asc())
+        .order_by(MenuCategory.sort_order.asc(), MenuCategory.created_at.asc())
         .all()
     )
     return [
         {
             "id": c.id,
             "name": c.name,
+            "image": c.image,
+            "sortOrder": c.sort_order,
             "isActive": c.is_active,
             "itemsCount": int(counts.get(c.id, 0)),
         }
@@ -74,10 +76,17 @@ def create_menu_category(actor: AdminPrincipal, payload: dict) -> MenuCategory:
     name = (payload.get("name") or "").strip()
     if not name:
         raise StaffPermissionError("name is required.", 400)
+    max_order = (
+        db.session.query(func.max(MenuCategory.sort_order))
+        .filter_by(restaurant_id=scope_id)
+        .scalar()
+    )
     category = MenuCategory(
         id=(payload.get("id") or f"cat-{uuid.uuid4().hex[:8]}"),
         restaurant_id=scope_id,
         name=name,
+        image=_normalize_image(payload.get("image")),
+        sort_order=int(max_order or 0) + 1,
         is_active=bool(payload.get("isActive", True)),
     )
     db.session.add(category)
@@ -97,7 +106,36 @@ def update_menu_category(actor: AdminPrincipal, category_id: str, payload: dict)
         category.name = name
     if "isActive" in payload:
         category.is_active = bool(payload.get("isActive"))
+    if "image" in payload:
+        category.image = _normalize_image(payload.get("image"))
     return category
+
+
+def reorder_menu_categories(actor: AdminPrincipal, payload: dict) -> list[dict]:
+    scope_id = resolve_restaurant_scope(actor, payload.get("restaurantId"))
+    ids = payload.get("ids")
+    if not isinstance(ids, list) or not ids:
+        raise StaffPermissionError("ids list is required.", 400)
+
+    categories = MenuCategory.query.filter_by(restaurant_id=scope_id).all()
+    by_id = {category.id: category for category in categories}
+    if set(ids) != set(by_id.keys()):
+        raise StaffPermissionError("ids must contain all category ids for this restaurant.", 400)
+
+    for index, category_id in enumerate(ids, start=1):
+        by_id[category_id].sort_order = index
+
+    ordered = sorted(by_id.values(), key=lambda item: item.sort_order)
+    return [
+        {
+            "id": c.id,
+            "name": c.name,
+            "image": c.image,
+            "sortOrder": c.sort_order,
+            "isActive": c.is_active,
+        }
+        for c in ordered
+    ]
 
 
 def list_menu_items(actor: AdminPrincipal, restaurant_id: str | None, category_id: str | None) -> list[dict]:

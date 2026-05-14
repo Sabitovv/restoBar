@@ -11,10 +11,12 @@ from telebot.util import quick_markup
 
 from .observability.metrics import PAYMENTS_MARK_FAILED, PAYMENTS_MARKED_PAID
 from .services.ai_service import AIService
+from .services.ai_menu_context_service import build_public_menu_facts
 from .services.admin_auth_service import resolve_active_membership
 from .services.bot_message_service import save_ai_event, save_incoming_message, save_outgoing_message
 from .services.prompt_builder import build_prompt
 from .services.payment_service import mark_order_paid_from_telegram, order_exists_for_payload
+from .services.web_search_service import WebSearchService, is_restaurant_intent
 
 
 logger = logging.getLogger(__name__)
@@ -163,26 +165,32 @@ def handle_all_messages(message):
         return
 
     if settings is not None and settings.enable_ai_bot_replies and message.text is not None:
-        queue = runtime.get("queue")
-        if queue is not None and has_app_context():
-            queue.enqueue(
-                "app.workers.ai_tasks.process_ai_message_task",
-                message_text=message.text,
-                context_messages=[],
-                menu_facts=[],
-                model=settings.ai_model,
-                timeout_seconds=settings.ai_request_timeout_seconds,
-                max_retries=settings.ai_max_retries,
-            )
-            bot.send_message(chat_id=message.chat.id, text="Got it. Thinking about your question...")
-            return
+        menu_facts: list[str] = []
+        web_facts: list[str] = []
+        if has_app_context():
+            try:
+                menu_facts = build_public_menu_facts(max_items=80)
+            except Exception as exc:
+                logger.exception("Could not build menu facts for AI: %s", exc)
 
+        if not is_restaurant_intent(message.text) and settings.ai_web_search_enabled and settings.tavily_api_key:
+            try:
+                web_search = WebSearchService(
+                    api_key=settings.tavily_api_key,
+                    timeout_seconds=settings.tavily_timeout_seconds,
+                    max_results=settings.tavily_max_results,
+                )
+                web_facts = web_search.search_facts(message.text)
+            except Exception as exc:
+                logger.exception("Web search failed: %s", exc)
+
+        facts = menu_facts if is_restaurant_intent(message.text) else menu_facts + web_facts
         ai_service = AIService(
             model=settings.ai_model,
             timeout_seconds=settings.ai_request_timeout_seconds,
             max_retries=settings.ai_max_retries,
         )
-        prompt = build_prompt(message.text, context_messages=[], menu_facts=[])
+        prompt = build_prompt(message.text, context_messages=[], menu_facts=facts)
         result = ai_service.generate_reply(prompt)
         if result.get("ok"):
             answer = result["content"]

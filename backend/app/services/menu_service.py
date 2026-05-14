@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from ..models import CafeInfo, MenuCategory, MenuItem, MenuItemVariant
+from ..models import CafeInfo, MenuCategory, MenuItem, MenuItemVariant, Restaurant
 
 
 def _read_json(path: str) -> list | dict:
@@ -13,6 +13,22 @@ def _read_json(path: str) -> list | dict:
 
 
 def get_cafe_info_from_pg() -> dict | None:
+    restaurant = Restaurant.query.filter_by(is_active=True).order_by(Restaurant.created_at.asc()).first()
+    if restaurant is not None:
+        hours = restaurant.working_hours_json or {}
+        compact = " | ".join([f"{day}: {value}" for day, value in hours.items() if value])
+        return {
+            "name": restaurant.name,
+            "kitchenCategories": restaurant.about or "",
+            "rating": "4.9",
+            "cookingTime": compact or "",
+            "status": "Open" if restaurant.is_active else "Closed",
+            "logoImage": restaurant.preview_image or "",
+            "coverImage": restaurant.preview_image or "",
+            "workingHours": hours,
+            "previewImage": restaurant.preview_image or "",
+        }
+
     row = CafeInfo.query.filter_by(id="main").first()
     if row is None:
         return None

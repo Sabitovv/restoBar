@@ -26,12 +26,19 @@ from .services.admin_menu_service import (
     create_menu_item,
     list_menu_categories,
     list_menu_items,
+    reorder_menu_categories,
     soft_delete_menu_item,
     toggle_item_availability,
     update_menu_category,
     update_menu_item,
 )
-from .services.admin_restaurant_service import create_restaurant, delete_restaurant, list_restaurants
+from .services.admin_restaurant_service import (
+    create_restaurant,
+    delete_restaurant,
+    get_restaurant_profile,
+    list_restaurants,
+    update_restaurant_profile,
+)
 from .services.admin_staff_service import StaffPermissionError, change_staff_role, invite_staff_member, list_staff, revoke_staff_member
 from .services.menu_service import get_cafe_info_from_pg, get_categories_from_pg, get_category_menu_from_pg, get_menu_item_details_from_pg
 from .services.storage_service import generate_idempotency_key, mirror_order_to_json, persist_order
@@ -368,6 +375,30 @@ def register_routes(app: Flask) -> None:
             return {"message": "Unauthorized."}, 401
         return {"items": list_restaurants(principal)}
 
+    @app.route("/admin/restaurant/profile", methods=["GET"])
+    def admin_restaurant_profile_get():
+        principal = get_admin_principal()
+        if principal is None:
+            return {"message": "Unauthorized."}, 401
+        try:
+            return get_restaurant_profile(principal)
+        except StaffPermissionError as exc:
+            return {"message": exc.message}, exc.status_code
+
+    @app.route("/admin/restaurant/profile", methods=["PATCH"])
+    def admin_restaurant_profile_patch():
+        principal = get_admin_principal()
+        if principal is None:
+            return {"message": "Unauthorized."}, 401
+        payload = request.get_json() or {}
+        try:
+            data = update_restaurant_profile(principal, payload)
+            db.session.commit()
+            return data
+        except StaffPermissionError as exc:
+            db.session.rollback()
+            return {"message": exc.message}, exc.status_code
+
     @app.route("/admin/restaurants", methods=["POST"])
     def admin_restaurants_create():
         principal = get_admin_principal()
@@ -428,7 +459,7 @@ def register_routes(app: Flask) -> None:
         except StaffPermissionError as exc:
             db.session.rollback()
             return {"message": exc.message}, exc.status_code
-        return {"id": category.id, "name": category.name, "isActive": category.is_active}, 201
+        return {"id": category.id, "name": category.name, "image": category.image, "isActive": category.is_active}, 201
 
     @app.route("/admin/menu/categories/<category_id>", methods=["PATCH"])
     def admin_menu_categories_update(category_id: str):
@@ -442,7 +473,21 @@ def register_routes(app: Flask) -> None:
         except StaffPermissionError as exc:
             db.session.rollback()
             return {"message": exc.message}, exc.status_code
-        return {"id": category.id, "name": category.name, "isActive": category.is_active}
+        return {"id": category.id, "name": category.name, "image": category.image, "isActive": category.is_active}
+
+    @app.route("/admin/menu/categories/reorder", methods=["PATCH"])
+    def admin_menu_categories_reorder():
+        principal = get_admin_principal()
+        if principal is None:
+            return {"message": "Unauthorized."}, 401
+        payload = request.get_json() or {}
+        try:
+            items = reorder_menu_categories(principal, payload)
+            db.session.commit()
+        except StaffPermissionError as exc:
+            db.session.rollback()
+            return {"message": exc.message}, exc.status_code
+        return {"items": items}
 
     @app.route("/admin/menu/items", methods=["GET"])
     def admin_menu_items_list():

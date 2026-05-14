@@ -33,6 +33,9 @@ class Restaurant(db.Model):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    about: Mapped[str | None] = mapped_column(Text)
+    preview_image: Mapped[str | None] = mapped_column(Text)
+    working_hours_json: Mapped[dict | None] = mapped_column(JSONB)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -75,6 +78,8 @@ class MenuCategory(db.Model):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     restaurant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("restaurants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    image: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int] = mapped_column(default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, nullable=False)
     deleted_at: Mapped[datetime | None]
