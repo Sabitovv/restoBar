@@ -1,7 +1,7 @@
 """add client theme and menu metadata fields
 
-Revision ID: 20260514_0009
-Revises: 20260514_0008
+Revision ID: 20260514_0012
+Revises: 20260514_0011
 Create Date: 2026-05-14
 """
 
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "20260514_0009"
-down_revision = "20260514_0008"
+revision = "20260514_0012"
+down_revision = "20260514_0011"
 branch_labels = None
 depends_on = None
 
