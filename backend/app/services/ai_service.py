@@ -1,5 +1,8 @@
 import os
 import time
+import json
+import logging
+import re
 
 import requests
 
@@ -103,39 +106,78 @@ class AIService:
             f"Text: {text}"
         )
 
-        try:
-            response = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
-                headers={
-                    "x-goog-api-key": api_key,
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.1},
-                },
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            parts = payload.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-            raw = "\n".join([str(part.get("text", "")).strip() for part in parts if part.get("text")]).strip()
-            translations = {}
-            for code in safe_targets:
-                marker = f'"{code}"'
-                if marker in raw:
-                    # Best-effort JSON parse without adding heavy deps
-                    import json
-
-                    try:
-                        parsed = json.loads(raw)
-                        translations = {k: str(v) for k, v in parsed.items() if k in safe_targets}
-                        break
-                    except Exception:
-                        pass
-            if not translations:
-                for code in safe_targets:
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = requests.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent",
+                    headers={
+                        "x-goog-api-key": api_key,
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                        "generationConfig": {"temperature": 0.1},
+                    },
+                    timeout=self.timeout_seconds,
+                )
+                response.raise_for_status()
+                payload = response.json()
+                parts = payload.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                raw = "\n".join([str(part.get("text", "")).strip() for part in parts if part.get("text")]).strip()
+                translations = self._parse_translations(raw, safe_targets)
+                fallback_codes = [code for code in safe_targets if code not in translations]
+                for code in fallback_codes:
                     translations[code] = text
-            return {"ok": True, "translations": translations}
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
+                if fallback_codes:
+                    logging.getLogger(__name__).debug(
+                        "translate_text fallback used for languages: %s",
+                        ",".join(fallback_codes),
+                    )
+                return {"ok": True, "translations": translations}
+            except Exception as exc:
+                if attempt >= self.max_retries:
+                    return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": "Translation failed."}
+
+    @staticmethod
+    def _parse_translations(raw: str, safe_targets: list[str]) -> dict[str, str]:
+        parsed = AIService._loads_json_object(raw)
+        if parsed is None:
+            cleaned = AIService._strip_markdown_fences(raw)
+            parsed = AIService._loads_json_object(cleaned)
+        if parsed is None:
+            first_object = AIService._extract_first_json_object(raw)
+            parsed = AIService._loads_json_object(first_object)
+        if not isinstance(parsed, dict):
+            return {}
+        return {k: str(v) for k, v in parsed.items() if k in safe_targets and v is not None}
+
+    @staticmethod
+    def _loads_json_object(raw: str) -> dict | None:
+        if not raw:
+            return None
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    @staticmethod
+    def _strip_markdown_fences(raw: str) -> str:
+        if not raw:
+            return ""
+        stripped = raw.strip()
+        match = re.match(r"^```(?:json)?\s*(.*?)\s*```$", stripped, flags=re.DOTALL | re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return stripped
+
+    @staticmethod
+    def _extract_first_json_object(raw: str) -> str:
+        if not raw:
+            return ""
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return ""
+        return raw[start : end + 1]

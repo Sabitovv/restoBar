@@ -223,6 +223,7 @@ def list_menu_items(actor: AdminPrincipal, restaurant_id: str | None, category_i
             "priceByCurrency": item.price_by_currency or {},
             "discountMinor": item.discount_minor,
             "discountIsActive": item.discount_is_active,
+            "isPopular": item.is_popular,
             "isActive": item.is_active,
             "isAvailableNow": item.is_available_now,
             "variants": [
@@ -278,6 +279,7 @@ def create_menu_item(actor: AdminPrincipal, payload: dict) -> MenuItem:
         recipe_i18n=recipe_i18n,
         image=_normalize_image(payload.get("image")),
         price_by_currency=_normalize_price_by_currency(payload.get("priceByCurrency"), payload.get("variants", [{}])[0].get("priceMinor")),
+        is_popular=bool(payload.get("isPopular", False)),
         discount_minor=discount_minor,
         discount_is_active=bool(payload.get("discountIsActive", False)),
         is_active=bool(payload.get("isActive", True)),
@@ -351,6 +353,8 @@ def update_menu_item(actor: AdminPrincipal, menu_item_id: str, payload: dict) ->
         item.discount_minor = discount_minor
     if "discountIsActive" in payload:
         item.discount_is_active = bool(payload.get("discountIsActive"))
+    if "isPopular" in payload:
+        item.is_popular = bool(payload.get("isPopular"))
     if "priceByCurrency" in payload:
         item.price_by_currency = _normalize_price_by_currency(payload.get("priceByCurrency"))
     if "variants" in payload:

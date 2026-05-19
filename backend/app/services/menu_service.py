@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from ..models import CafeInfo, MenuCategory, MenuItem, MenuItemVariant, Restaurant
@@ -50,11 +51,59 @@ def _read_json(path: str) -> list | dict:
         return json.load(infile)
 
 
+def _to_hhmm(value: str) -> str:
+    raw = str(value or "").strip()
+    match = re.match(r"^(\d{1,2}):(\d{2})$", raw)
+    if not match:
+        return ""
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return ""
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _normalize_working_hours_for_client(raw_hours: object) -> dict[str, dict[str, object]]:
+    day_keys = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    result: dict[str, dict[str, object]] = {
+        day: {"isOpen": False, "openAt": "", "closeAt": ""}
+        for day in day_keys
+    }
+
+    if not isinstance(raw_hours, dict):
+        return result
+
+    for day in day_keys:
+        payload = raw_hours.get(day)
+        if isinstance(payload, dict):
+            is_open = bool(payload.get("isOpen"))
+            open_at = _to_hhmm(str(payload.get("openAt") or ""))
+            close_at = _to_hhmm(str(payload.get("closeAt") or ""))
+            if is_open and open_at and close_at:
+                result[day] = {"isOpen": True, "openAt": open_at, "closeAt": close_at}
+            continue
+
+        if isinstance(payload, str):
+            # Legacy format example: "Mon 9:00-00:00"
+            found = re.search(r"(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})", payload)
+            if not found:
+                continue
+            open_at = _to_hhmm(found.group(1))
+            close_at = _to_hhmm(found.group(2))
+            if open_at and close_at:
+                result[day] = {"isOpen": True, "openAt": open_at, "closeAt": close_at}
+
+    return result
+
+
 def get_cafe_info_from_pg(lang: str = "ru") -> dict | None:
     restaurant = Restaurant.query.filter_by(is_active=True).order_by(Restaurant.created_at.asc()).first()
     if restaurant is not None:
-        hours = restaurant.working_hours_json or {}
-        compact = " | ".join([f"{day}: {value}" for day, value in hours.items() if value])
+        hours = _normalize_working_hours_for_client(restaurant.working_hours_json or {})
+        compact = " | ".join([
+            f"{day}: {value.get('openAt')}-{value.get('closeAt')}" if value.get("isOpen") else f"{day}: closed"
+            for day, value in hours.items()
+        ])
         return {
             "name": restaurant.name,
             "kitchenCategories": _pick_i18n_text(restaurant.about_i18n, restaurant.about, lang),
@@ -113,7 +162,11 @@ def _variant_weight_from_json(menu_item_id: str, variant_name: str, menu_folder_
     return None
 
 
-def get_category_menu_from_pg(category_id: str, lang: str = "ru", currency: str = "KZT", menu_folder_path: str = "data/menu") -> list[dict]:
+def get_category_menu_from_pg(category_id: str, lang: str = "ru", currency: str = "KZT", menu_folder_path: str = "data/menu") -> list[dict] | None:
+    category_exists = MenuCategory.query.filter_by(id=category_id, is_active=True).first() is not None
+    if not category_exists:
+        return None
+
     items = (
         MenuItem.query.filter_by(category_id=category_id, is_active=True, is_available_now=True)
         .order_by(MenuItem.id.asc())
@@ -187,3 +240,50 @@ def get_menu_item_details_from_pg(menu_item_id: str, lang: str = "ru", currency:
             for variant in variants
         ],
     }
+
+
+def get_popular_menu_from_pg(limit: int = 8, lang: str = "ru", currency: str = "KZT", menu_folder_path: str = "data/menu") -> list[dict]:
+    items = (
+        MenuItem.query.filter_by(is_active=True, is_available_now=True)
+        .order_by(MenuItem.id.asc())
+        .limit(max(1, int(limit or 8)))
+        .all()
+    )
+    if not items:
+        return []
+
+    item_ids = [item.id for item in items]
+    variants = (
+        MenuItemVariant.query.filter(MenuItemVariant.menu_item_id.in_(item_ids), MenuItemVariant.is_active.is_(True))
+        .order_by(MenuItemVariant.id.asc())
+        .all()
+    )
+    variants_by_item_id: dict[str, list[MenuItemVariant]] = {}
+    for variant in variants:
+        variants_by_item_id.setdefault(variant.menu_item_id, []).append(variant)
+
+    result = []
+    for item in items:
+        base_variant = (variants_by_item_id.get(item.id) or [None])[0]
+        if base_variant is None:
+            continue
+        price_minor, used_currency = _resolve_price(item, int(base_variant.price_minor), currency)
+        result.append(
+            {
+                "id": item.id,
+                "name": _pick_i18n_text(item.name_i18n, item.name, lang),
+                "description": _pick_i18n_text(item.description_i18n, item.description, lang),
+                "recipe": _pick_i18n_recipe(item.recipe_i18n, item.recipe, lang),
+                "image": item.image,
+                "variants": [
+                    {
+                        "id": base_variant.id.split(":")[-1],
+                        "name": base_variant.name,
+                        "cost": str(price_minor),
+                        "currency": used_currency,
+                        "weight": _variant_weight_from_json(item.id, base_variant.name, menu_folder_path),
+                    }
+                ],
+            }
+        )
+    return result

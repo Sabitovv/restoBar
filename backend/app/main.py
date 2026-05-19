@@ -40,7 +40,13 @@ from .services.admin_restaurant_service import (
     update_restaurant_profile,
 )
 from .services.admin_staff_service import StaffPermissionError, change_staff_role, invite_staff_member, list_staff, revoke_staff_member
-from .services.menu_service import get_cafe_info_from_pg, get_categories_from_pg, get_category_menu_from_pg, get_menu_item_details_from_pg
+from .services.menu_service import (
+    get_cafe_info_from_pg,
+    get_categories_from_pg,
+    get_category_menu_from_pg,
+    get_menu_item_details_from_pg,
+    get_popular_menu_from_pg,
+)
 from .services.ai_service import AIService
 from .services.storage_service import generate_idempotency_key, mirror_order_to_json, persist_order
 
@@ -85,7 +91,9 @@ def create_app() -> Flask:
 
 
 def register_routes(app: Flask) -> None:
-    frontend_root = Path(__file__).resolve().parents[2] / "frontend"
+    legacy_frontend_root = Path(__file__).resolve().parents[2] / "frontend"
+    react_frontend_root = Path(__file__).resolve().parents[2] / "client-web" / "dist"
+    frontend_root = react_frontend_root if react_frontend_root.exists() else legacy_frontend_root
     admin_frontend_root = Path(__file__).resolve().parents[2] / "admin-web" / "dist"
     settings = app.config["SETTINGS"]
     admin_host = urlparse(settings.admin_app_url).hostname if settings.admin_app_url else None
@@ -149,6 +157,18 @@ def register_routes(app: Flask) -> None:
         except FileNotFoundError:
             return {"message": "Could not find categories data."}, 404
 
+    @app.route("/menu/popular")
+    def popular_menu():
+        settings = app.config["SETTINGS"]
+        lang = (request.args.get("lang") or "ru").strip().lower()
+        currency = (request.args.get("currency") or "KZT").strip().upper()
+        limit = int(request.args.get("limit") or 8)
+        if settings.read_menu_from_pg:
+            popular_data = get_popular_menu_from_pg(limit=limit, lang=lang, currency=currency)
+            if popular_data or not settings.json_menu_fallback:
+                return popular_data
+        return []
+
     @app.route("/menu/<category_id>")
     def category_menu(category_id: str):
         settings = app.config["SETTINGS"]
@@ -156,7 +176,7 @@ def register_routes(app: Flask) -> None:
         currency = (request.args.get("currency") or "KZT").strip().upper()
         if settings.read_menu_from_pg:
             menu_data = get_category_menu_from_pg(category_id, lang=lang, currency=currency)
-            if menu_data or not settings.json_menu_fallback:
+            if menu_data is not None or not settings.json_menu_fallback:
                 return menu_data
         try:
             return json_data(f"data/menu/{category_id}.json")

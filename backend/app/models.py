@@ -109,6 +109,7 @@ class MenuItem(db.Model):
     recipe_i18n: Mapped[dict | None] = mapped_column(JSONB)
     image: Mapped[str | None] = mapped_column(Text)
     price_by_currency: Mapped[dict | None] = mapped_column(JSONB)
+    is_popular: Mapped[bool] = mapped_column(default=False, nullable=False)
     discount_minor: Mapped[int] = mapped_column(default=0, nullable=False)
     discount_is_active: Mapped[bool] = mapped_column(default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)

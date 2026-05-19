@@ -3,6 +3,22 @@ from __future__ import annotations
 from ..models import MenuCategory, MenuItem, MenuItemVariant, Restaurant
 
 
+def _format_hours(day: str, value: object) -> str | None:
+    if isinstance(value, dict):
+        is_open = bool(value.get("isOpen", False))
+        if not is_open:
+            return f"Hours {day}: closed"
+        open_at = str(value.get("openAt") or "").strip()
+        close_at = str(value.get("closeAt") or "").strip()
+        if open_at and close_at:
+            return f"Hours {day}: {open_at}-{close_at}"
+        return f"Hours {day}: open"
+    text = str(value or "").strip()
+    if text:
+        return f"Hours {day}: {text}"
+    return None
+
+
 def build_public_menu_facts(max_items: int = 80) -> list[str]:
     restaurant = Restaurant.query.filter_by(is_active=True).order_by(Restaurant.created_at.asc()).first()
     if restaurant is None:
@@ -16,9 +32,9 @@ def build_public_menu_facts(max_items: int = 80) -> list[str]:
     hours = restaurant.working_hours_json or {}
     if isinstance(hours, dict):
         for day in ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]:
-            value = str(hours.get(day) or "").strip()
-            if value:
-                facts.append(f"Hours {day}: {value}")
+            hours_fact = _format_hours(day, hours.get(day))
+            if hours_fact:
+                facts.append(hours_fact)
 
     categories = (
         MenuCategory.query.filter_by(restaurant_id=restaurant.id, is_active=True)
